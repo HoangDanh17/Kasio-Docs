@@ -2,10 +2,11 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Phiên bản | 1.0 |
-| Ngày | 2026-11-21 |
+| Phiên bản | 1.4 |
+| Ngày | 2026-11-22 |
 | Áp dụng cho | Dự án `kasio` và các dự án dùng chung quy trình |
-| Tài liệu liên quan | `docs/Business_Requirements/BRD_v1.md` |
+| Tài liệu liên quan | `docs/business-requirements/BRD.md` (D-14, mục 1.7) |
+| Lịch sử | 1.0 (2026-11-21) quy trình baseline; 1.1 (2026-11-22) thêm tech stack; 1.2 (2026-11-22) CQRS GET từ MongoDB + audit Staff; 1.3 (2026-11-22) audit mọi actor đã xác thực, Owner xem audit của mình; 1.4 (2026-11-22) CAP outbox cho đồng bộ write→read |
 | Mục đích | Thống nhất cách chuyển yêu cầu nghiệp vụ thành change, code, review và archive |
 
 > **BRD là nguồn sự thật về sản phẩm. OpenSpec là nguồn sự thật về change đang làm và spec đã build.**
@@ -84,9 +85,10 @@ Kết quả tối thiểu:
 ```text
 repo/
 ├── docs/
-│   ├── Flow.md
-│   └── Business_Requirements/
-│       └── BRD_v1.md
+│   ├── business-requirements/
+│   │   └── BRD.md
+│   └── process/
+│       └── Flow.md
 ├── openspec/
 │   ├── config.yaml
 │   ├── specs/                  # hệ thống đã build
@@ -108,17 +110,51 @@ context: |
   All artifacts must be written in vi.
   Keep OpenSpec structural headings and SHALL/MUST keywords in English.
 
-  Source of truth: docs/Business_Requirements/BRD_v1.md
-  Read BRD_v1 before proposing a change.
+  Source of truth: docs/business-requirements/BRD.md
+  Read BRD before proposing a change.
 
   Non-negotiable:
   - Every tenant-scoped endpoint has a cross-tenant negative test.
   - Sensitive actions write an audit event.
+  - Every authenticated action is audited; Owner can view own and Staff activity log.
+  - All domain GET/query APIs read from MongoDB read model; commands write PostgreSQL.
   - No online payment, billing, group chat, offline mode, or auto image comparison.
   - One change = one observable capability.
+
+  Tech stack (BRD D-14, mục 1.7):
+  - Backend: C# ASP.NET Core, DDD + CQRS.
+  - Write DB: PostgreSQL (source of truth, business constraints).
+  - Read DB: MongoDB (projection only, rebuildable).
+  - Sync write→read: CAP (.NET) transactional outbox + event bus.
+  - Background jobs: Hangfire, idempotent.
+  - Web: Next.js + Tailwind CSS + GSAP.
+  - Mobile: React Native.
 ```
 
 Không đưa secret, token hay thông tin khách hàng vào `config.yaml`.
+
+### 2.4 Tech stack đã chốt
+
+Tech stack không còn là câu hỏi mở. Mọi change bám theo bảng dưới; đổi stack phải tạo `OD-*` mới và ADR, không tự ý đổi trong lúc apply.
+
+| Lớp | Công nghệ | Ghi chú cho change |
+|---|---|---|
+| Backend | C# / ASP.NET Core | DDD layering: Domain, Application, Infrastructure, Api |
+| Kiến trúc | DDD + CQRS | Command ghi PostgreSQL; mọi domain GET/query đọc MongoDB; không trộn |
+| Write DB | PostgreSQL | Nguồn sự thật; unique/partial index; EF Core global query filter |
+| Read DB | MongoDB | Projection rebuild được; mọi document tenant-scoped có `tenantId` |
+| Sync write→read | CAP (.NET) | Transactional outbox + event bus; publish sau commit; at-least-once; projection idempotent; transport chốt ở Sprint 0 |
+| Background job | Hangfire | Worker riêng; job idempotent; không giữ transaction dài |
+| Web | Next.js + Tailwind CSS + GSAP | Platform Admin console; GSAP cho animation/transition |
+| Mobile | React Native | Một app cho Owner/Staff/Renter/Seeker |
+
+Quy tắc:
+
+- `design.md` của change chạm dữ liệu phải nêu: aggregate/command nào, CAP outbox/projection nào, job nào.
+- Task CQRS đi theo thứ tự: write schema → domain → command handler → CAP outbox → projection → query API → UI.
+- Mọi domain GET/query handler chỉ đọc MongoDB; auth/session/permission/idempotency là ngoại lệ hạ tầng.
+- Test cross-tenant phải phủ cả endpoint đọc từ MongoDB.
+- Không thêm công nghệ mới (message broker/cache/search engine) ngoài transport đã chốt cho CAP nếu BRD chưa có quyết định; đề xuất bằng change/ADR riêng.
 
 ---
 
@@ -147,7 +183,7 @@ explore? → propose → review → apply → archive
 
 ```mermaid
 flowchart LR
-  B[BRD_v1.md] --> Q{Đủ rõ để làm?}
+  B[BRD.md] --> Q{Đủ rõ để làm?}
   Q -- Chưa --> E[openspec-explore]
   E --> P[openspec-propose]
   Q -- Rồi --> P
@@ -227,16 +263,18 @@ Nếu chưa trả lời được, quay lại `explore`.
 
 Dùng khi:
 
-- Chưa chọn tech stack/kiến trúc.
+- Cần chốt chi tiết kiến trúc trong phạm vi stack đã chốt (aggregate boundary, projection, CAP outbox, chia change).
 - Yêu cầu mâu thuẫn.
-- Cần so sánh 2–3 phương án.
+- Cần so sánh 2–3 phương án thiết kế.
 - Chưa biết chia change như thế nào.
 
 Ví dụ:
 
 ```text
-/skill:openspec-explore "So sánh .NET, NestJS và Go cho SaaS multi-tenant, một người làm, cần auth, RBAC, audit, upload ảnh."
+/skill:openspec-explore "Tách tenant auth và RBAC thành một change hay hai? Aggregate nào, projection nào cho read model MongoDB?"
 ```
+
+Tech stack đã chốt tại BRD D-14; `explore` không dùng để mở lại việc chọn ngôn ngữ/DB.
 
 Kết quả mong đợi: quyết định + lý do + rủi ro. Không code.
 
@@ -354,7 +392,7 @@ Nếu chỉ muốn cập nhật main spec trước, chưa archive:
 
 ## Why
 
-BRD_v1 §4.1 và §6.1 yêu cầu Owner tự đăng ký, tenant tự tạo, Staff chỉ thuộc một Owner,
+BRD §4.1 và §6.1 yêu cầu Owner tự đăng ký, tenant tự tạo, Staff chỉ thuộc một Owner,
 RBAC có phạm vi Property và audit cho thao tác nhạy cảm. Đây là nền tảng cho mọi module sau.
 
 ## What Changes
@@ -421,9 +459,11 @@ The system SHALL write an append-only audit event when a role or permission chan
 ```markdown
 ## 1. Data model
 
-- [ ] 1.1 Tạo migration User, Tenant, Membership, Role, Permission, AuditEvent
+- [ ] 1.1 Tạo migration PostgreSQL cho User, Tenant, Membership, Role, Permission, AuditEvent
 - [ ] 1.2 Thêm unique index cho email/phone và Staff active membership
 - [ ] 1.3 Seed permission catalog và role mặc định
+- [ ] 1.4 Tạo projection MongoDB cho membership/role phục vụ query
+- [ ] 1.5 Thêm CAP outbox + projection handler idempotent + lệnh rebuild projection
 
 ## 2. Auth
 
@@ -447,6 +487,7 @@ The system SHALL write an append-only audit event when a role or permission chan
 - [ ] 5.1 Test cross-tenant cho từng endpoint tenant-scoped
 - [ ] 5.2 Test Staff không thấy dữ liệu Property ngoài scope
 - [ ] 5.3 Test thu hồi role có hiệu lực ngay
+- [ ] 5.4 Test read model MongoDB trả đúng tenant và rebuild lại cho cùng kết quả
 ```
 
 ### 6.5 Review plan — ví dụ comment
@@ -616,6 +657,7 @@ openspec/changes/add-tenant-auth-foundation
 - [ ] Có `proposal.md` với why/scope/out-of-scope.
 - [ ] Có `specs/` với requirement testable.
 - [ ] Có `tasks.md`, mỗi task ≤ 1 ngày.
+- [ ] Change chạm dữ liệu có `design.md` nêu command/query, CAP outbox/projection, Hangfire job liên quan.
 - [ ] `OD-*` liên quan đã chốt hoặc có default được ghi rõ.
 - [ ] Không có dependency chưa xong (hoặc đã ghi rõ thứ tự).
 - [ ] `openspec validate <change>` pass.
@@ -627,7 +669,11 @@ openspec/changes/add-tenant-auth-foundation
 - [ ] Unit + integration test pass.
 - [ ] Cross-tenant test cho mọi endpoint tenant-scoped.
 - [ ] Audit event cho thao tác nhạy cảm.
-- [ ] Migration chạy được trên DB sạch và DB có dữ liệu cũ.
+- [ ] Migration PostgreSQL chạy được trên DB sạch và DB có dữ liệu cũ.
+- [ ] Projection MongoDB cập nhật từ write model qua CAP outbox và rebuild lại cho cùng kết quả.
+- [ ] Domain GET/query handler chỉ đọc MongoDB; không query PostgreSQL.
+- [ ] Audit event ghi cho mọi thao tác của actor đã xác thực và thao tác nhạy cảm.
+- [ ] Hangfire job (nếu có) idempotent, retry an toàn, không giữ transaction dài.
 - [ ] UI có loading/empty/error/retry.
 - [ ] `openspec validate --all` pass.
 - [ ] PR được review và merge.
@@ -683,6 +729,7 @@ Với team 1–2 người:
 - [ ] Có scenario cross-tenant.
 - [ ] Có scenario permission bị từ chối.
 - [ ] Có scenario audit cho thao tác nhạy cảm.
+- [ ] Có scenario audit cho mọi thao tác của actor đã xác thực.
 - [ ] `tasks.md` cover hết spec, không thừa.
 - [ ] Mỗi task ≤ 1 ngày; dependency rõ.
 - [ ] Không có payment/chat/offline/auto-compare ngoài scope.
@@ -692,6 +739,13 @@ Với team 1–2 người:
 - [ ] Test pass; test mới thực sự bắt được lỗi.
 - [ ] Không hard-code `tenantId` từ client.
 - [ ] Query có tenant filter hoặc kiểm tra quyền tương đương.
+- [ ] Read model MongoDB có `tenantId` + filter ở repository; projection rebuild được.
+- [ ] Ràng buộc nghiệp vụ cưỡng chế ở write model (domain + PostgreSQL), không dựa vào read model.
+- [ ] Command/query tách đúng CQRS; command không đọc read model để quyết định ghi.
+- [ ] Domain GET/query handler chỉ đọc MongoDB; không query PostgreSQL (trừ auth/permission).
+- [ ] Hangfire job gọi command/application handler, không ghi thẳng MongoDB.
+- [ ] Audit event ghi cho mọi thao tác của actor đã xác thực (đọc/ghi/tải file/xuất PDF).
+- [ ] Hangfire job idempotent; retry không tạo bản ghi/trừ tiền trùng.
 - [ ] Cross-tenant trả 404, không lộ existence.
 - [ ] Permission check ở server, không chỉ UI.
 - [ ] Audit event đúng actor/tenant/entity.
@@ -720,6 +774,8 @@ Với team 1–2 người:
 | Sửa main spec trực tiếp | Mất delta/lịch sử | Chỉ sửa main spec qua sync/archive |
 | Không tick `tasks.md` | Không biết tiến độ thật | Tick ngay khi task xong |
 | Bỏ qua cross-tenant test | Lộ dữ liệu | CI gate + review checklist |
+| Ghi/đọc thẳng read model MongoDB | Sai lệch dữ liệu, mất ràng buộc nghiệp vụ | Write model là nguồn sự thật; read model chỉ projection rebuild được |
+| GET handler query thẳng PostgreSQL | Sai CQRS, chậm và lệch read model | Domain GET chỉ đọc MongoDB; architecture test |
 | Thêm scope giữa sprint | Trễ, loãng spec | Ý mới → change mới |
 | Chạy archive khi task chưa xong | Spec không khớp code | Gate G3 |
 | Dùng project-local skills | Team không thống nhất | Dùng global skills + `openspec init --tools none` |
@@ -731,8 +787,8 @@ Với team 1–2 người:
 
 Trong ngày đầu:
 
-1. Đọc `docs/Business_Requirements/BRD_v1.md` mục 1, 3, 6, 12, 13.
-2. Đọc `docs/Flow.md` này.
+1. Đọc `docs/business-requirements/BRD.md` mục 1, 3, 6, 12, 13.
+2. Đọc `docs/process/Flow.md` này.
 3. Cài OpenSpec CLI + global skills cho agent.
 4. Chạy:
    ```bash
