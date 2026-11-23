@@ -1,12 +1,12 @@
 # Nền tảng SaaS Quản lý & Cho thuê Phòng trọ
-## Tài liệu Yêu cầu Nghiệp vụ (BRD) — v1.6
+## Tài liệu Yêu cầu Nghiệp vụ (BRD) — v1.8
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Phiên bản | **1.6** (baseline MVP + tech stack web responsive; bỏ mobile) |
+| Phiên bản | **1.8** (bổ sung rate limit backend bằng Redis) |
 | Ngày phát hành | 2026-11-23 |
 | Trạng thái | Baseline duy nhất; đã chốt nghiệp vụ MVP và tech stack (D-14, mục 1.7) |
-| Lịch sử | 1.0 (2026-11-21) nghiệp vụ baseline; 1.1 (2026-11-22) chốt tech stack; 1.2 (2026-11-22) làm rõ bàn giao, kết thúc Lease, người ở, thanh toán, audit PII; 1.3 (2026-11-22) audit toàn bộ Staff, mọi GET đọc MongoDB, giải thích D-15/D-20; 1.4 (2026-11-22) audit mọi actor đã xác thực, Owner xem audit của mình; 1.5 (2026-11-22) CAP outbox cho đồng bộ write→read; 1.6 (2026-11-23) bỏ mobile, toàn bộ actor dùng một web app responsive |
+| Lịch sử | 1.0 (2026-11-21) nghiệp vụ baseline; 1.1 (2026-11-22) chốt tech stack; 1.2 (2026-11-22) làm rõ bàn giao, kết thúc Lease, người ở, thanh toán, audit PII; 1.3 (2026-11-22) audit toàn bộ Staff, mọi GET đọc MongoDB, giải thích D-15/D-20; 1.4 (2026-11-22) audit mọi actor đã xác thực, Owner xem audit của mình; 1.5 (2026-11-22) CAP outbox cho đồng bộ write→read; 1.6 (2026-11-23) bỏ mobile, toàn bộ actor dùng một web app responsive; 1.7 (2026-11-23) hợp đồng mẫu Admin/Owner, chỉ gia hạn trên cùng Lease, Admin không xem CCCD, lưu LeaseRevision + audit, Renter xác nhận hóa đơn; 1.8 (2026-11-23) rate limit backend tập trung bằng Redis, baseline theo route class, 429 + Retry-After, fallback khi Redis lỗi |
 | Nguồn | Quyết định đã chốt trong tài liệu này; bản nháp v0.1 đã xóa khỏi repo (còn trong git history) |
 | Người sở hữu | Product Owner |
 | Đối tượng đọc | Product Owner, Backend/Frontend Engineer, QA, người review kiến trúc |
@@ -64,6 +64,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | SC-05 | Hiệu năng API | p95 đọc ≤ 300 ms, ghi ≤ 800 ms ở 200 người dùng đồng thời | Load test |
 | SC-06 | Truy vết thao tác nhạy cảm | 100% có audit event | Kiểm tra audit log |
 | SC-07 | Pilot | 5–10 Owner, ≥ 50 phòng, 3 tháng, không có lỗi P0/P1 kéo dài > 24 giờ | Pilot report |
+| SC-08 | Rate limit chặn burst vượt ngưỡng, không làm hỏng dữ liệu | 100% request vượt ngưỡng trả `429` + `Retry-After`; 0 command nghiệp vụ bị ghi một phần | Abuse test + E2E |
 
 ### 1.4 Phạm vi
 
@@ -74,13 +75,14 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | Property, Room, bảng giá điện/nước/dịch vụ | Quản lý tài sản cố định, khấu hao |
 | Tin đăng, marketplace, tìm kiếm, yêu cầu xem phòng | Tin nổi bật, quảng cáo trả phí, SEO web công khai |
 | Duyệt tin, feedback từ chối, bản nháp sửa đổi | Workflow kiểm duyệt nhiều cấp |
-| Hợp đồng, người ở, CCCD, xác nhận trên web | Chữ ký số có giá trị pháp lý/chứng thực |
+| Hợp đồng (mẫu hệ thống/mẫu riêng), người ở, CCCD, xác nhận trên web | Chữ ký số có giá trị pháp lý/chứng thực |
 | Biên bản check-in/check-out có ảnh | So sánh ảnh tự động, AI phát hiện hư hỏng |
-| Nhập chỉ số điện/nước, Renter xác nhận ảnh | Đồng hồ thông minh, IoT |
+| Nhập chỉ số điện/nước, Renter xác nhận ảnh; hóa đơn chờ Renter xác nhận | Đồng hồ thông minh, IoT |
 | Hóa đơn, minh chứng chuyển khoản, Owner xác nhận | Thanh toán online, ví điện tử, cổng ngân hàng, đối soát tự động |
 | Thông báo đẩy + inbox, thông báo theo Property | Chat nhóm, chat realtime, SMS/email marketing |
 | Ticket báo sự cố | Helpdesk đa cấp, SLA, chat trực tuyến |
 | Audit log, phân quyền Staff | Báo cáo doanh thu, dashboard nâng cao, đa ngôn ngữ |
+| Rate limit API tập trung bằng Redis, 429 + `Retry-After` | WAF/DDoS chuyên dụng, CAPTCHA, rate limit theo gói cước |
 | Một web app responsive cho mọi actor; marketplace công khai không cần đăng nhập | App native iOS/Android; desktop app |
 
 ### 1.5 Ràng buộc và giả định
@@ -94,9 +96,9 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - **Không tích hợp thanh toán**: chuyển khoản ngoài hệ thống; hệ thống chỉ ghi nhận minh chứng và xác nhận.
 - Không có offline mode; chỉ chịu mạng yếu bằng retry/upload lại.
 - Push notification qua Web Push (FCM) + inbox; email chỉ dùng cho xác thực/khôi phục mật khẩu/lời mời.
-- Backend: **C# / ASP.NET Core**, kiến trúc **DDD + CQRS**; **PostgreSQL** là write DB (nguồn sự thật); **MongoDB** là read DB (projection, rebuild được); đồng bộ write→read bằng **CAP (.NET) transactional outbox + event bus**; background job bằng **Hangfire**.
+- Backend: **C# / ASP.NET Core**, kiến trúc **DDD + CQRS**; **PostgreSQL** là write DB (nguồn sự thật); **MongoDB** là read DB (projection, rebuild được); đồng bộ write→read bằng **CAP (.NET) transactional outbox + event bus**; background job bằng **Hangfire**; **Redis** là store ephemeral cho **rate limit** phân tán.
 - Web: **Next.js + Tailwind CSS + GSAP**; một web app responsive cho Owner/Staff/Renter/Seeker/Platform Admin.
-- Hạ tầng managed: PostgreSQL, MongoDB, object storage S3-compatible; worker Hangfire chạy tách khỏi API.
+- Hạ tầng managed: PostgreSQL, MongoDB, Redis (HA cho rate limit), object storage S3-compatible; worker Hangfire chạy tách khỏi API.
 
 **Giả định**
 
@@ -104,7 +106,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - Trường hợp Renter không dùng web được xử lý ngoài hệ thống trong MVP; không thiết kế luồng giấy tờ thay thế.
 - Platform Admin có người trực để duyệt tin trong vòng 24 giờ.
 - Push có thể trễ/mất; inbox trên web là nguồn sự thật.
-- Nội dung hợp đồng do Owner cung cấp; nền tảng không tư vấn pháp lý.
+- Nội dung hợp đồng do Platform Admin cung cấp mẫu hệ thống và/hoặc Owner tự soạn mẫu riêng; nền tảng không tư vấn pháp lý.
 
 ### 1.6 Quyết định đã chốt
 
@@ -123,7 +125,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | D-11 | Không so sánh ảnh tự động, không màn hình so sánh trực tiếp | Giữ đúng phạm vi MVP; giảm phức tạp |
 | D-12 | Không chat nhóm/chat realtime; chỉ push một chiều + ticket | Giữ đúng phạm vi MVP |
 | D-13 | Marketplace chỉ phục vụ bản tin đã duyệt hiện hành | Chống rò rỉ nội dung chưa duyệt |
-| D-14 | Tech stack: ASP.NET Core (C#) + DDD/CQRS; PostgreSQL write DB, MongoDB read DB, CAP (.NET) transactional outbox cho đồng bộ write→read, Hangfire cho background job; Next.js + Tailwind CSS + GSAP cho một web app responsive dùng cho mọi actor | Một người làm cần stack quen thuộc, tách read/write để đọc nhanh; CAP giữ outbox cùng transaction PostgreSQL; trade-off CQRS/eventual consistency được ghi rõ ở mục 1.7 |
+| D-14 | Tech stack: ASP.NET Core (C#) + DDD/CQRS; PostgreSQL write DB, MongoDB read DB, CAP (.NET) transactional outbox cho đồng bộ write→read, Hangfire cho background job, **Redis cho rate limit phân tán**; Next.js + Tailwind CSS + GSAP cho một web app responsive dùng cho mọi actor | Một người làm cần stack quen thuộc, tách read/write để đọc nhanh; CAP giữ outbox cùng transaction PostgreSQL; Redis là store ephemeral phù hợp đếm atomic; trade-off CQRS/eventual consistency được ghi rõ ở mục 1.7 |
 | D-15 | Check-in lập sau khi Lease `Active`, trước khi bàn giao; biên bản `PendingRenter` không chặn Lease nhưng phải nhắc Renter hàng ngày | Tách ký hợp đồng khỏi biên bản, vẫn giữ bằng chứng trước khi giao phòng |
 | D-16 | Chỉ Renter đại diện có tài khoản; người ở cùng là hồ sơ dữ liệu, không đăng nhập trong MVP | Khớp mô hình `Lease.representativeUserId`; tránh mở rộng quyền truy cập ngoài phạm vi |
 | D-17 | Hóa đơn `PaymentSubmitted` không bị job chuyển `Overdue`; chỉ `Issued` mới chuyển; hóa đơn chờ xác nhận quá hạn hiển thị cờ trễ | Tránh trạng thái "quá hạn" sai khi Renter đã gửi minh chứng |
@@ -131,11 +133,33 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | D-19 | Quá `endDate` Lease không tự `Terminated`; giữ `EndingSoon` đến khi BR-19 hoàn tất | Không bỏ qua check-out, hóa đơn cuối và hoàn cọc |
 | D-20 | Check-out: Owner chỉ được `Terminated` sau khi Renter xác nhận biên bản hoặc quá 72 giờ kể từ khi gửi; quá hạn dùng cờ `unconfirmedCheckout` + lý do + audit | Tránh chặn trả phòng nhưng vẫn có thời gian phản hồi và bằng chứng |
 | D-21 | Audit ghi **mọi thao tác của actor đã xác thực** (Owner, Staff, Renter, Platform Admin: đọc/ghi/tải file/xuất PDF) kèm actor, tenant, thời gian, hành động, entity, kết quả; Owner xem được audit của chính mình và activity log của Staff. Hành động công khai có side effect của Seeker ghi audit không danh tính. | Owner giám sát được mình và nhân viên; audit tách application log, append-only, không chứa PII |
+| D-22 | Platform Admin quản lý **bộ hợp đồng mẫu hệ thống**; Owner dùng mẫu hệ thống hoặc tạo **mẫu riêng của tenant**. Mẫu có version; khi tạo Lease, mẫu được snapshot vào `LeaseVersion` nên sửa mẫu không làm đổi hợp đồng đã tạo. | Chuẩn hóa nội dung, vẫn cho Owner linh hoạt; tránh sửa mẫu ảnh hưởng hợp đồng đang hiệu lực |
+| D-23 | **Chỉ gia hạn trên cùng Lease**, không tạo Lease mới kế tiếp. Gia hạn cập nhật `endDate`/giá sau khi Owner và Renter xác nhận, tạo `LeaseRevision` + `LeaseVersion` mới, giữ nguyên `startDate` gốc và toàn bộ lịch sử. | Một Room vẫn một Lease `Active`; lịch sử thuê liên tục, không phân mảnh hợp đồng |
+| D-24 | **Platform Admin không được xem ảnh CCCD** trong mọi trường hợp, kể cả support access. Chỉ Owner có `document.cccd.view` và Renter đại diện sở hữu ảnh của chính mình. | Giảm phơi bày dữ liệu nhạy cảm nhất; Admin không cần ảnh để vận hành nền tảng |
+| D-25 | Mọi thay đổi Lease (tạo/sửa nháp/ký/gia hạn/phụ lục/chấm dứt/hủy) tạo **`LeaseRevision` bất biến** lưu loại thay đổi, hash trước/sau, snapshot, actor, lý do, thời gian; kèm audit event. Bản đã ký vẫn có `LeaseVersion` + PDF hash. | Có lịch sử đầy đủ để đối soát tranh chấp; revision không thay thế audit toàn hệ thống |
+| D-26 | Hóa đơn sau khi Owner phát hành ở `PendingRenterConfirmation`; Renter xác nhận thì mới `Issued` (có thể thanh toán). Quá **72 giờ** không phản hồi, hệ thống tự `Issued` với cờ `unconfirmedInvoice` + audit; Renter phản hồi thì `Disputed` và Owner phải void/phát hành lại. | Renter nhận và xác nhận hóa đơn trước khi trả; không chặn vận hành nếu Renter im lặng |
+| D-27 | **Rate limit tập trung bằng Redis** cho mọi API công khai và đã xác thực: đếm atomic theo key + cửa sổ TTL, giới hạn baseline theo route class, trả `429` + `Retry-After`. Key băm theo IP/user/tenant, **không chứa email/số điện thoại/CCCD**. | Một ngưỡng chung cho tất cả API instance; giảm brute force, spam và lạm dụng upload/export |
+| D-28 | Redis là store **ephemeral**, không phải nguồn sự thật. Khi Redis lỗi: endpoint auth/nhạy cảm dùng **local fallback** thận trọng; read công khai **fail-open** để không sập marketplace; mọi trường hợp có metric + alert. | Không đánh đổi availability toàn hệ thống chỉ vì mất bộ đếm; vẫn giữ lớp bảo vệ tối thiểu cho auth |
+| D-29 | Rate limit **không thay thế** authorization, account lock chống dò mật khẩu, idempotency hay audit. MVP không có UI chỉnh rate limit; policy theo environment + versioned config, thay đổi qua deploy/change log. | Tránh hiểu nhầm rate limit là kiểm soát quyền; giữ cấu hình đơn giản, có kiểm soát thay đổi |
 
 **Giải thích D-15 và D-20**
 
 - **D-15 — Check-in và bàn giao:** Lease `Active` ngay khi Owner và Renter ký. Sau đó, trước khi giao chìa khóa, Owner lập biên bản check-in và gửi Renter. Renter xác nhận thì biên bản `Locked`; chưa xác nhận thì vẫn `PendingRenter` và được nhắc hàng ngày. Hệ thống chỉ cho ghi nhận "đã bàn giao" sau khi biên bản đã gửi — không bắt Renter phải xác nhận xong mới được nhận phòng.
 - **D-20 — Check-out:** Khi trả phòng, Owner lập biên bản check-out. Renter xác nhận thì khóa ngay. Nếu Renter không phản hồi trong 72 giờ, Owner được khóa với cờ `unconfirmedCheckout` + lý do + audit; trước 72 giờ thì không. Sau khi biên bản khóa, hóa đơn cuối và hoàn cọc xử lý xong thì Lease mới `Terminated`. Renter vẫn xem và phản hồi sau; thay đổi qua phụ lục.
+
+**Giải thích D-22 → D-26**
+
+- **D-22 — Hợp đồng mẫu:** Admin duy trì mẫu hệ thống (theo version) để Owner dùng ngay; Owner vẫn có thể tạo mẫu riêng. Khi tạo Lease, nội dung mẫu được snapshot vào phiên bản hợp đồng, nên cập nhật mẫu về sau không làm thay đổi hợp đồng đã ký.
+- **D-23 — Gia hạn:** Không sinh Lease thứ hai cho cùng Room. Gia hạn là một revision trên Lease hiện tại: Owner đề xuất `endDate`/giá mới, Renter xác nhận, Lease quay lại `Active` với kỳ hạn mới; lịch sử kỳ hạn cũ vẫn nằm trong revision.
+- **D-24 — Admin và CCCD:** support access của Admin chỉ áp dụng cho dữ liệu vận hành (Owner, tin đăng, tenant metadata), không mở ảnh CCCD. Mọi endpoint ảnh CCCD từ chối Admin kể cả khi đang trong phiên support access.
+- **D-25 — Revision:** mỗi thay đổi Lease ghi một `LeaseRevision`; revision chứa snapshot/hash và không được sửa/xóa. Đây là lịch sử nghiệp vụ của hợp đồng, bổ sung cho audit event toàn hệ thống.
+- **D-26 — Xác nhận hóa đơn:** hóa đơn mới phát hành chưa phải khoản phải trả cho đến khi Renter xác nhận (hoặc quá 72 giờ). Renter dispute thì hóa đơn không được xác nhận thanh toán; Owner phải void và phát hành lại sau khi làm rõ.
+
+**Giải thích D-27 → D-29**
+
+- **D-27 — Rate limit:** mỗi request đi qua middleware rate limit trước khi vào command/query handler. Key được ghép từ policy + subject đã băm + route class + cửa sổ thời gian; Redis `INCR` + `EXPIRE` (hoặc Lua) đảm bảo atomic. Vượt ngưỡng thì dừng trước business handler, trả `429`, không ghi dữ liệu.
+- **D-28 — Redis lỗi:** rate limit là lớp bảo vệ, không phải nguồn sự thật. Với login/register/reset/upload/sinh PDF, dùng local fallback theo instance với ngưỡng **≤ 50% baseline** để vẫn chặn burst; với marketplace/GET công khai, cho phép đi qua và ghi metric. Không dùng PostgreSQL/MongoDB làm fallback counter.
+- **D-29 — Phạm vi:** rate limit không cấp quyền, không thay account lock; 429 không được tạo audit event cho từng request (tránh ngập audit). Chỉ audit khi vượt ngưỡng lạm dụng hoặc khi fallback/Redis lỗi kéo dài.
 
 ### 1.7 Kiến trúc kỹ thuật đã chốt
 
@@ -146,14 +170,15 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | Write DB | PostgreSQL | Nguồn sự thật: command, transaction, unique/partial index, audit |
 | Read DB | MongoDB | Projection/read model: **mọi domain GET/query** (marketplace, danh sách, chi tiết, activity log) |
 | Sync write→read | CAP (.NET) | Transactional outbox + event bus; publish sau khi transaction PostgreSQL commit; at-least-once, consumer idempotent; transport chốt ở Sprint 0 |
-| Background job | Hangfire (storage PostgreSQL) | Nhắc hạn, chuyển `Overdue`, `EndingSoon`, archive CCCD, retry push, rebuild projection |
+| Background job | Hangfire (storage PostgreSQL) | Nhắc hạn, chuyển `Overdue`, `EndingSoon`, tự xác nhận hóa đơn sau 72 giờ, archive CCCD, retry push, rebuild projection |
+| Rate limit | Redis (HA) | Đếm atomic theo key + cửa sổ TTL, chia sẻ giữa mọi API instance; ephemeral, không phải nguồn sự thật |
 | Web | Next.js + Tailwind CSS + GSAP | Một web app responsive cho Owner/Staff/Renter/Seeker/Platform Admin; animation/transition bằng GSAP |
 | Object storage | S3-compatible, bucket private | Ảnh tin, CCCD, biên bản, minh chứng |
 | Push | Web Push (FCM) | Push notification trên web; inbox là nguồn sự thật |
 
 **Ràng buộc kiến trúc**
 
-- **Write model là nguồn sự thật.** Mọi ràng buộc nghiệp vụ (BR-01, BR-09, BR-10, BR-15, BR-22, BR-25, BR-41) cưỡng chế ở domain + PostgreSQL; MongoDB **không** thay thế ràng buộc.
+- **Write model là nguồn sự thật.** Mọi ràng buộc nghiệp vụ (BR-01, BR-09, BR-10, BR-15, BR-22, BR-25, BR-41, BR-53, BR-54) cưỡng chế ở domain + PostgreSQL; MongoDB **không** thay thế ràng buộc.
 - **Read model chỉ để đọc và phải rebuild được** từ write DB. Sai lệch read model xử lý bằng rebuild, không sửa tay.
 - Projection cập nhật qua **CAP (.NET) transactional outbox**: event được publish sau khi transaction PostgreSQL commit, giao ít nhất một lần (at-least-once); mỗi consumer/projection handler idempotent; lag mục tiêu p95 ≤ 2 giây (NFR-DAT-05). Đây là **đồng bộ bất đồng bộ/eventual consistency**, không phải transaction hai pha; UI hiển thị dữ liệu read model có thể trễ trong khoảng lag này.
 - CAP outbox nằm cùng transaction PostgreSQL; chỉ đánh dấu đã publish sau khi transport nhận; retry/backoff, message lỗi quá ngưỡng được giữ lại (dead-letter/retry store) + alert; không xóa outbox trước khi publish.
@@ -165,7 +190,13 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - Tiền lưu số nguyên 64-bit (đồng) ở cả hai phía; không dùng `double`/floating point (BR-25).
 - Hangfire worker chạy tách khỏi API, scale ngang dùng distributed lock; job phải idempotent và retry an toàn (BR-39).
 - MongoDB không dùng làm write DB cho bất kỳ aggregate nào trong MVP.
-- Toàn bộ MVP chạy trên một web app responsive; marketplace công khai là route không cần đăng nhập, nhưng SEO/quảng cáo vẫn ngoài phạm vi (OD-10).
+- Mọi endpoint công khai/đã xác thực đi qua **rate limit middleware** trước authorization/command/query; lớp IP chạy trước authentication, lớp user/tenant chạy sau authentication. Không có bypass từ UI. Rate limit áp dụng cả GET/read để chống scrape.
+- Rate limit dùng Redis với thao tác atomic (`INCR` + `EXPIRE` hoặc Lua script), TTL theo cửa sổ; key chứa subject đã băm, route class và tenant/user (không PII); mọi API instance chia sẻ cùng Redis.
+- Redis là **ephemeral**: không backup, không rebuild, không dùng làm nguồn sự thật hay audit. Mất counter chỉ làm giới hạn tạm thời lỏng hơn, không làm hỏng dữ liệu nghiệp vụ (D-28).
+- Rate limit trả `429` trước khi thực thi nghiệp vụ; không ghi một phần dữ liệu. 429 không tạo audit event cho từng request; chỉ audit khi vượt ngưỡng lạm dụng hoặc fallback Redis kéo dài (D-29).
+- Redis lỗi: auth/nhạy cảm dùng local fallback theo instance với ngưỡng ≤ 50% baseline; read công khai fail-open; có metric + alert. Không fallback sang PostgreSQL/MongoDB.
+- Chỉ tin `X-Forwarded-For`/`Forwarded` từ reverse proxy tin cậy; IP client lấy từ danh sách proxy đã cấu hình, không lấy header tùy ý từ client.
+- Health check, metrics nội bộ và job nội bộ được loại trừ khỏi rate limit; mọi route còn lại phải có policy. Policy rate limit là cấu hình versioned theo environment, thay đổi có change log.
 
 ---
 
@@ -184,15 +215,22 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | **Listing** (tin đăng) | Tin quảng cáo một phòng trống trên marketplace |
 | **Listing Revision** | Bản sửa đổi nội dung tin đăng; bản đã duyệt vẫn hiển thị trong khi bản mới chờ duyệt |
 | **Viewing Request** | Yêu cầu liên hệ/đặt lịch xem phòng của Seeker |
-| **Lease** (hợp đồng) | Thỏa thuận thuê giữa Owner và Renter cho một Room |
+| **Lease** (hợp đồng) | Thỏa thuận thuê giữa Owner và Renter cho một Room; **gia hạn trên cùng Lease**, không tạo Lease mới |
+| **Lease Template** (hợp đồng mẫu) | Bộ điều khoản mẫu do Platform Admin tạo (mẫu hệ thống) hoặc Owner tạo riêng (mẫu tenant); có version và được snapshot khi tạo Lease |
+| **Lease Revision** | Bản ghi bất biến mỗi lần Lease thay đổi (tạo/sửa nháp/ký/gia hạn/phụ lục/chấm dứt), gồm hash trước/sau, actor, lý do, thời gian |
 | **Occupant** (người ở) | Người đại diện hoặc người ở cùng trong Lease; **chỉ là hồ sơ dữ liệu, không có tài khoản đăng nhập trong MVP** |
 | **Condition Report** (biên bản tình trạng) | Bản ghi tình trạng phòng kèm ảnh tại check-in/check-out |
 | **Meter Reading** (chỉ số) | Chỉ số điện/nước của một kỳ, kèm ảnh đồng hồ |
-| **Invoice** (hóa đơn) | Hóa đơn tiền phòng + điện + nước + dịch vụ của một kỳ |
+| **Invoice** (hóa đơn) | Hóa đơn tiền phòng + điện + nước + dịch vụ của một kỳ; Renter phải xác nhận trước khi hóa đơn chuyển `Issued` |
+| **Invoice Confirmation** | Thao tác Renter xác nhận nội dung hóa đơn; quá 72 giờ hệ thống tự xác nhận với cờ `unconfirmedInvoice` + audit |
 | **Payment Proof** (minh chứng thanh toán) | Ảnh biên lai/thông tin chuyển khoản do Renter hoặc Owner tải lên |
 | **Ticket** (yêu cầu sự cố) | Yêu cầu báo hỏng/sự cố của Renter cho một Room |
 | **Audit Event** | Bản ghi bất biến của một thao tác quan trọng |
 | **Suspended** | Trạng thái Owner bị Platform Admin khóa |
+| **Rate Limit** | Giới hạn số request trong một cửa sổ thời gian theo policy + subject (IP/user/tenant/route class), cưỡng chế tập trung bằng Redis |
+| **Rate Limit Key** | Khóa Redis dạng `rl:{policy}:{subjectType}:{subjectHash}:{window}`; subjectHash là HMAC/SHA-256, không chứa PII |
+| **429 Too Many Requests** | Phản hồi khi vượt rate limit; kèm `Retry-After`, không thực thi nghiệp vụ phía sau |
+| **Fail-open / Fail-closed** | Khi Redis lỗi: fail-open cho read công khai; auth/nhạy cảm dùng local fallback thận trọng, không fail-closed toàn hệ thống |
 
 ---
 
@@ -202,10 +240,10 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 
 | Actor | Kênh | Trách nhiệm chính |
 |---|---|---|
-| **Platform Admin** | Web (responsive) | Quản lý Owner, khóa/mở khóa, duyệt tin, bật miễn duyệt, xử lý báo cáo, thống kê nền tảng |
-| **Owner** | Web (responsive) | Quản lý Property/Room/giá, đăng tin, hợp đồng, biên bản, điện nước, hóa đơn, nhân viên, thông báo |
+| **Platform Admin** | Web (responsive) | Quản lý Owner, khóa/mở khóa, duyệt tin, bật miễn duyệt, xử lý báo cáo, thống kê nền tảng, quản lý **hợp đồng mẫu hệ thống**; **không xem ảnh CCCD** |
+| **Owner** | Web (responsive) | Quản lý Property/Room/giá, đăng tin, hợp đồng (dùng mẫu hệ thống hoặc tạo mẫu riêng), biên bản, điện nước, hóa đơn, nhân viên, thông báo |
 | **Staff** | Web (responsive) | Làm việc trong tenant của một Owner theo role + phạm vi Property được giao |
-| **Renter** | Web (responsive) | Xem/ký hợp đồng, xác nhận biên bản & chỉ số, xem hóa đơn, gửi minh chứng, tạo ticket |
+| **Renter** | Web (responsive) | Xem/ký hợp đồng, xác nhận biên bản & chỉ số, **xác nhận hóa đơn**, gửi minh chứng, tạo ticket |
 | **Seeker** | Web công khai (không đăng nhập) | Tìm tin, xem chi tiết, gửi yêu cầu xem phòng |
 
 ### 3.2 Mô hình danh tính
@@ -227,10 +265,14 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | Đăng/sửa tin | Toàn tenant | Theo quyền | Duyệt/từ chối | — | — |
 | Duyệt tin, bật miễn duyệt | — | — | Có | — | — |
 | Tạo/chấm dứt hợp đồng | Toàn tenant | Theo quyền | — | Ký/xem hợp đồng của mình | — |
-| Xem CCCD | Có | Chỉ khi được cấp quyền nhạy cảm | Chỉ khi support access có lý do | Chỉ ảnh của mình | — |
+| Quản lý hợp đồng mẫu | Dùng mẫu hệ thống + tạo mẫu riêng | Theo quyền | Tạo/quản lý mẫu hệ thống | — | — |
+| Gia hạn hợp đồng | Toàn tenant | Theo quyền | — | Xác nhận gia hạn | — |
+| Xem lịch sử revision hợp đồng | Toàn tenant | `lease.read` | — | Chỉ revision của Lease mình | — |
+| Xem CCCD | Có | Chỉ khi được cấp quyền nhạy cảm | **Không** (kể cả support access) | Chỉ ảnh của mình | — |
 | Biên bản check-in/out | Toàn tenant | Theo quyền | — | Xác nhận/phản hồi | — |
 | Nhập chỉ số điện/nước | Toàn tenant | Theo quyền | — | Xác nhận/phản hồi | — |
 | Tạo hóa đơn | Toàn tenant | Theo quyền | — | Xem hóa đơn của mình | — |
+| Xác nhận hóa đơn | — | — | — | Xác nhận/phản hồi hóa đơn của mình | — |
 | Xác nhận thanh toán | Có | Chỉ khi được cấp quyền nhạy cảm | — | Gửi minh chứng | — |
 | Gửi thông báo Property | Có | Theo quyền | — | Nhận | — |
 | Quản lý Staff/role | Có | — | — | — | — |
@@ -245,7 +287,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | Role | Phạm vi | Quyền mặc định | Quyền nhạy cảm |
 |---|---|---|---|
 | `owner` | Toàn tenant | Toàn bộ quyền tenant | `document.cccd.view`, `payment.confirm`, `lease.terminate`, `staff.manage`, `tariff.write` |
-| `manager` | Property được giao | Property/Room, tin đăng, hợp đồng, biên bản, chỉ số, hóa đơn (trừ xác nhận thanh toán), ticket, thông báo, audit read | Không mặc định |
+| `manager` | Property được giao | Property/Room, tin đăng, hợp đồng (trừ quản lý mẫu), biên bản, chỉ số, hóa đơn (trừ xác nhận thanh toán), ticket, thông báo, audit read | Không mặc định |
 | `meter_staff` | Property được giao | Xem phòng, nhập chỉ số, xem/xử lý ticket | Không |
 | `support_staff` | Property được giao | Xem phòng/hợp đồng/hóa đơn, xử lý ticket, gửi thông báo | Không |
 
@@ -266,7 +308,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - **FR-ACC-05**: Người dùng xem thiết bị đang đăng nhập, đăng xuất từng thiết bị hoặc tất cả; đổi mật khẩu thu hồi toàn bộ refresh token.
 - **FR-ACC-06**: Platform Admin xem danh sách Owner, khóa/mở khóa kèm lý do bắt buộc; mọi thao tác có audit.
 - **FR-ACC-07**: Platform Admin duyệt/từ chối tin, bật/tắt miễn duyệt cho từng Owner, xử lý báo cáo vi phạm.
-- **FR-ACC-08**: Platform Admin chỉ xem dữ liệu tenant qua **support access** có lý do, thời hạn tối đa 24 giờ, mặc định chỉ đọc, có audit.
+- **FR-ACC-08**: Platform Admin chỉ xem dữ liệu tenant qua **support access** có lý do, thời hạn tối đa 24 giờ, mặc định chỉ đọc, có audit. Support access **không áp dụng cho ảnh CCCD**; mọi endpoint ảnh CCCD từ chối Platform Admin.
 - **FR-ACC-09**: Cập nhật hồ sơ cá nhân; email/số điện thoại phải duy nhất; đổi số điện thoại/email cần xác thực lại.
 
 ### 4.2 Property, Room và bảng giá
@@ -297,20 +339,24 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 
 ### 4.4 Hợp đồng thuê
 
-- **FR-LSE-01**: Owner/Staff có quyền tạo Lease từ Room `Vacant`: Renter, thời hạn, giá thuê, tiền cọc, chu kỳ thanh toán, ngày đến hạn, đơn giá điện/nước/dịch vụ, điều khoản/nội quy.
+- **FR-LSE-01**: Owner/Staff có quyền tạo Lease từ Room `Vacant`: chọn **hợp đồng mẫu hệ thống hoặc mẫu riêng của tenant** (hoặc soạn nội dung riêng), Renter, thời hạn, giá thuê, tiền cọc, chu kỳ thanh toán, ngày đến hạn, đơn giá điện/nước/dịch vụ, điều khoản/nội quy.
 - **FR-LSE-02**: Mời Renter bằng số điện thoại/email/link; token có hạn 7 ngày, dùng một lần; Renter chưa có tài khoản thì đăng ký trong luồng.
 - **FR-LSE-03**: Khai báo người đại diện + người ở cùng: họ tên, ngày sinh, số CCCD, số điện thoại, vai trò; đính ảnh CCCD mặt trước/sau. Ảnh CCCD là dữ liệu nhạy cảm. Chỉ người đại diện có tài khoản Renter; người ở cùng chỉ là hồ sơ (D-16).
 - **FR-LSE-04**: Owner xác nhận nội dung và ký trước; Renter xem bản hợp đồng, tick đồng ý và xác nhận; Lease chỉ `Active` khi cả hai đã ký.
 - **FR-LSE-05**: Hệ thống tạo bản PDF bất biến của hợp đồng tại thời điểm ký, kèm hash, timestamp, user/device; tải lại phải khớp hash.
-- **FR-LSE-06**: Sau khi ký, không sửa trực tiếp nội dung; thay đổi giá/thời hạn/điều khoản phải tạo phụ lục hoặc phiên bản mới, có xác nhận của các bên.
-- **FR-LSE-07**: Gia hạn tạo Lease mới kế tiếp; ngày kết thúc của Lease cũ không đổi. Quá ngày kết thúc không tự động chuyển `Terminated`: Lease giữ `EndingSoon` cho đến khi BR-19 hoàn tất.
+- **FR-LSE-06**: Sau khi ký, không sửa trực tiếp nội dung; thay đổi giá/thời hạn/điều khoản phải tạo phụ lục hoặc phiên bản mới, có xác nhận của các bên và ghi `LeaseRevision`.
+- **FR-LSE-07**: **Gia hạn trên cùng Lease, không tạo Lease mới.** Owner đề xuất `endDate`/giá mới; Renter xác nhận; hệ thống cập nhật kỳ hạn, tạo `LeaseRevision` + `LeaseVersion` mới và giữ nguyên lịch sử. Quá ngày kết thúc không tự động chuyển `Terminated`: Lease giữ `EndingSoon` cho đến khi BR-19 hoàn tất.
 - **FR-LSE-08**: Renter gửi yêu cầu trả phòng; Owner xác nhận; hệ thống tạo checklist check-out và hóa đơn cuối.
 - **FR-LSE-09**: Job hàng ngày đánh dấu `EndingSoon` trước ngày hết hạn 30 ngày; gửi thông báo cho Owner và Renter.
 - **FR-LSE-10**: Một Room chỉ có tối đa một Lease `Active` tại một thời điểm.
 - **FR-LSE-11**: Renter xem tất cả Lease của mình trên nhiều Owner trong cùng một tài khoản.
 - **FR-LSE-12**: Ký điện tử ở mức **xác nhận trên web**, không phải chữ ký số có giá trị pháp lý; ghi rõ điều này trong hợp đồng và màn hình xác nhận.
-- **FR-LSE-13**: Khi Lease kết thúc, ảnh CCCD chuyển sang trạng thái lưu trữ, ẩn khỏi giao diện thường và khỏi Staff; Renter đại diện vẫn xem được ảnh CCCD của chính mình; Owner có quyền nhạy cảm và Platform Admin qua support access xem được ảnh archive, có audit.
+- **FR-LSE-13**: Khi Lease kết thúc, ảnh CCCD chuyển sang trạng thái lưu trữ, ẩn khỏi giao diện thường và khỏi Staff; Renter đại diện vẫn xem được ảnh CCCD của chính mình; Owner có quyền nhạy cảm xem được ảnh archive, có audit. **Platform Admin không được xem ảnh CCCD trong mọi trường hợp, kể cả support access (D-24).**
 - **FR-LSE-14**: Staff chỉ thấy Lease thuộc Property được giao và chỉ thao tác trong phạm vi quyền.
+- **FR-LSE-15**: Platform Admin quản lý **hợp đồng mẫu hệ thống**: tạo, sửa, ngừng áp dụng; mỗi mẫu có `code`, `version`, nội dung điều khoản, trạng thái. Mẫu đã ngừng không cho tạo Lease mới nhưng không ảnh hưởng Lease đã tạo.
+- **FR-LSE-16**: Owner dùng mẫu hệ thống hoặc tạo/sửa **mẫu riêng của tenant**; khi tạo Lease phải chọn mẫu (hoặc soạn riêng) và hệ thống snapshot mẫu + version vào `LeaseVersion`. Sửa mẫu không làm thay đổi Lease đã tạo.
+- **FR-LSE-17**: Mọi thay đổi Lease tạo **`LeaseRevision` bất biến**: `revisionNo`, loại thay đổi, hash/snapshot trước và sau, actor, lý do, thời gian; kèm audit event. Owner/Staff có `lease.read` xem lịch sử revision; Renter đại diện xem revision của Lease mình. Không có API sửa/xóa revision.
+- **FR-LSE-18**: Gia hạn chỉ áp dụng cho Lease `Active`/`EndingSoon`; Owner gửi đề xuất gia hạn, Renter xác nhận; hệ thống tạo revision + version gia hạn, cập nhật `endDate`/giá, đưa Lease về `Active`; không tạo Lease mới và không đổi `startDate` gốc. Bản gia hạn có PDF + hash mới, bản PDF cũ vẫn giữ nguyên.
 
 ### 4.5 Biên bản tình trạng phòng
 
@@ -334,21 +380,22 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - **FR-MTR-04**: Hóa đơn chỉ được tạo từ chỉ số `Confirmed`. Nếu Renter không phản hồi trong **72 giờ**, Owner được phép phát hành hóa đơn với cờ `unconfirmedReading`, có audit và thông báo; Renter vẫn có thể phản hồi sau đó.
 - **FR-MTR-05**: Hóa đơn gồm các dòng: tiền phòng, điện, nước, internet, rác, giữ xe, dịch vụ khác; mỗi dòng có số lượng, đơn giá, thành tiền; đơn giá được snapshot tại thời điểm phát hành.
 - **FR-MTR-06**: Hóa đơn có kỳ, ngày phát hành, ngày đến hạn, tổng tiền; mặc định đến hạn ngày 5 của tháng kế tiếp hoặc theo Lease.
-- **FR-MTR-07**: Hóa đơn đã phát hành là bất biến; điều chỉnh bằng cách void và phát hành hóa đơn thay thế, có lý do + audit; không xóa.
-- **FR-MTR-08**: Renter hoặc Owner/Staff tải minh chứng chuyển khoản: số tiền, thời gian, mã giao dịch (nếu có), ảnh biên lai/ghi chú; hóa đơn chuyển `PaymentSubmitted`.
+- **FR-MTR-07**: Hóa đơn đã phát hành là bất biến; điều chỉnh bằng cách void và phát hành hóa đơn thay thế, có lý do + audit; không xóa. Hóa đơn đang `PendingRenterConfirmation` hoặc `Disputed` cũng không sửa trực tiếp, chỉ void/reissue.
+- **FR-MTR-08**: Renter hoặc Owner/Staff tải minh chứng chuyển khoản: số tiền, thời gian, mã giao dịch (nếu có), ảnh biên lai/ghi chú; hóa đơn chuyển `PaymentSubmitted`. Chỉ hóa đơn đã `Issued` hoặc `Overdue` mới nhận minh chứng.
 - **FR-MTR-09**: Chỉ người có quyền `payment.confirm` được xác nhận thanh toán; nếu từ chối, bắt buộc lý do; hóa đơn về trạng thái trước đó (`Issued` hoặc `Overdue`).
-- **FR-MTR-10**: Trạng thái hóa đơn: `Issued` (chưa thanh toán), `PaymentSubmitted`, `Paid`, `Overdue`, `Void`.
-- **FR-MTR-11**: Job hàng ngày chỉ chuyển hóa đơn `Issued` quá hạn sang `Overdue`; hóa đơn `PaymentSubmitted` giữ nguyên trạng thái và hiển thị cờ trễ theo `dueDate`; gửi nhắc trước hạn 3 ngày, đúng hạn, sau hạn 3 ngày và 7 ngày.
+- **FR-MTR-10**: Trạng thái hóa đơn: `PendingRenterConfirmation` (chờ Renter xác nhận), `Disputed` (Renter phản hồi), `Issued` (đã xác nhận, chưa thanh toán), `PaymentSubmitted`, `Paid`, `Overdue`, `Void`.
+- **FR-MTR-11**: Job hàng ngày chỉ chuyển hóa đơn `Issued` quá hạn sang `Overdue`; hóa đơn `PaymentSubmitted` giữ nguyên trạng thái và hiển thị cờ trễ theo `dueDate`; hóa đơn `PendingRenterConfirmation`/`Disputed` không chuyển `Overdue` (chỉ hiển thị cờ trễ). Gửi nhắc trước hạn 3 ngày, đúng hạn, sau hạn 3 ngày và 7 ngày.
 - **FR-MTR-12**: Không tích hợp thanh toán online/ví/cổng ngân hàng; không xử lý hoàn tiền tự động.
 - **FR-MTR-13**: Xuất PDF hóa đơn và biên nhận xác nhận thanh toán.
 - **FR-MTR-14**: MVP không hỗ trợ thanh toán một phần; số tiền xác nhận phải bằng tổng hóa đơn, trừ khi Owner ghi đè có lý do + audit.
 - **FR-MTR-15**: Renter xem hóa đơn theo Lease và theo tháng, kèm bảng giá đang áp dụng cho Lease của mình; Owner xem theo Property/Room/kỳ; có bộ lọc trạng thái.
 - **FR-MTR-16**: Renter đại diện chỉ thấy hóa đơn thuộc Lease mà mình là `representativeUserId`; người ở cùng không có tài khoản và không truy cập trực tiếp.
+- **FR-MTR-17**: Sau khi Owner phát hành, hóa đơn ở `PendingRenterConfirmation`; Renter nhận thông báo, xem chi tiết và **xác nhận** hoặc phản hồi. Xác nhận → `Issued`. Không phản hồi trong **72 giờ** → job tự chuyển `Issued` với cờ `unconfirmedInvoice` + audit. Phản hồi → `Disputed`; Owner phải void và phát hành hóa đơn thay thế sau khi làm rõ. Chỉ hóa đơn `Issued`/`Overdue` mới được gửi minh chứng thanh toán.
 
 ### 4.7 Thông báo và liên lạc
 
 - **FR-NTF-01**: Kênh: Web Push (FCM) + inbox trên web. Email chỉ cho xác thực/khôi phục mật khẩu/lời mời.
-- **FR-NTF-02**: Sự kiện: hợp đồng mới, hợp đồng sắp hết hạn, hóa đơn mới, nhắc thanh toán, thanh toán được xác nhận/từ chối, chỉ số mới, biên bản mới, ticket cập nhật, thông báo chung.
+- **FR-NTF-02**: Sự kiện: hợp đồng mới, hợp đồng sắp hết hạn, **gia hạn hợp đồng**, hóa đơn mới chờ xác nhận, hóa đơn được xác nhận/phản hồi, nhắc thanh toán, thanh toán được xác nhận/từ chối, chỉ số mới, biên bản mới, ticket cập nhật, thông báo chung.
 - **FR-NTF-03**: Owner/Staff có quyền gửi thông báo theo Property; xem trước nội dung; gửi một lần đến tất cả Renter đại diện đang có Lease `Active` trong Property; có audit.
 - **FR-NTF-04**: Mỗi thông báo có deep link tới entity liên quan; khi mở phải kiểm tra lại quyền.
 - **FR-NTF-05**: Người dùng tùy chọn tắt thông báo theo nhóm (tin đăng, ticket, thông báo chung); thông báo giao dịch (hợp đồng/hóa đơn/thanh toán) không được tắt.
@@ -369,13 +416,48 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 
 ### 4.9 Audit log
 
-- **FR-ADT-01**: Ghi audit cho **mọi thao tác của actor đã xác thực** (Owner, Staff, Renter, Platform Admin): đọc/xem, ghi, tải file, xuất PDF; kèm hành động công khai có side effect của Seeker (gửi yêu cầu xem, báo cáo tin) ở dạng không danh tính. Các sự kiện quan trọng vẫn audit theo §11.1: đăng nhập thất bại, đổi quyền, mời/xóa Staff, tạo/sửa/xóa Property/Room/giá, duyệt/từ chối tin, ký hợp đồng, chốt biên bản, xem CCCD, nhập/sửa chỉ số, phát hành/void hóa đơn, xác nhận/từ chối thanh toán, gửi thông báo Property.
-- **FR-ADT-02**: Mỗi event gồm: `id`, `occurredAt`, `actorUserId`, `actorRole`, `tenantId`, `action`, `entityType`, `entityId`, `before`, `after`, `ip`, `userAgent`, `requestId`, `reason`. `before`/`after` chỉ chứa metadata/field thay đổi; không chứa số CCCD, ảnh, token, mật khẩu; giá trị nhạy cảm phải được che (D-18).
+- **FR-ADT-01**: Ghi audit cho **mọi thao tác của actor đã xác thực** (Owner, Staff, Renter, Platform Admin): đọc/xem, ghi, tải file, xuất PDF; kèm hành động công khai có side effect của Seeker (gửi yêu cầu xem, báo cáo tin) ở dạng không danh tính. Các sự kiện quan trọng vẫn audit theo §11.1: đăng nhập thất bại, đổi quyền, mời/xóa Staff, tạo/sửa/xóa Property/Room/giá, duyệt/từ chối tin, tạo/sửa/ký/gia hạn/chấm dứt Lease và **mọi `LeaseRevision`**, quản lý hợp đồng mẫu, chốt biên bản, xem CCCD, nhập/sửa chỉ số, phát hành/void hóa đơn, **Renter xác nhận/phản hồi hóa đơn**, xác nhận/từ chối thanh toán, gửi thông báo Property.
+- **FR-ADT-02**: Mỗi event gồm: `id`, `occurredAt`, `actorUserId`, `actorRole`, `tenantId`, `action`, `entityType`, `entityId`, `before`, `after`, `ip`, `userAgent`, `requestId`, `reason`. `before`/`after` chỉ chứa metadata/field thay đổi; không chứa số CCCD, ảnh, token, mật khẩu; giá trị nhạy cảm phải được che (D-18). Với Lease, audit tham chiếu `leaseRevisionId` thay vì nhúng toàn bộ nội dung hợp đồng.
 - **FR-ADT-03**: Audit là append-only; không có API sửa/xóa.
-- **FR-ADT-04**: Owner xem audit của tenant, gồm activity log của **chính mình** và của từng Staff (lọc theo actor/thời gian/hành động); Staff có `audit.read` xem theo quyền; Platform Admin xem toàn nền tảng; Renter không xem audit nội bộ.
+- **FR-ADT-04**: Owner xem audit của tenant, gồm activity log của **chính mình** và của từng Staff (lọc theo actor/thời gian/hành động); Staff có `audit.read` xem theo quyền; Platform Admin xem toàn nền tảng; Renter không xem audit nội bộ nhưng xem được **lịch sử revision của Lease mình**.
 - **FR-ADT-05**: Mọi lần xem ảnh CCCD, support access, xác nhận thanh toán, đổi giá, đổi quyền đều tạo audit.
 - **FR-ADT-06** *(NÊN)*: Xuất CSV audit theo khoảng thời gian cho Owner.
 - **FR-ADT-07**: Activity log (Owner/Staff/Platform Admin) đọc từ read model MongoDB; mỗi bản ghi có actor, hành động, entity, thời gian, kết quả; không chứa PII hay nội dung file.
+- **FR-ADT-08**: Lịch sử `LeaseRevision` được chiếu sang read model để hiển thị timeline hợp đồng; chỉ Owner/Staff có `lease.read` và Renter đại diện của Lease được đọc; mỗi lần xem ghi audit. Revision chỉ được tạo bởi command handler, không chỉnh sửa từ read model.
+
+### 4.10 Rate limit và bảo vệ API
+
+- **FR-RL-01**: Mọi request API công khai hoặc đã xác thực phải đi qua rate limit middleware trước command/query handler; rate limit áp dụng cả GET/read, không chỉ POST.
+- **FR-RL-02**: Policy được phân theo **route class** (`auth`, `public-read`, `search`, `write`, `upload`, `export`, `sensitive-document`, `admin`); endpoint mới phải khai báo policy, thiếu policy thì CI fail.
+- **FR-RL-03**: Subject rate limit: IP cho request chưa xác thực; request đã xác thực đếm **đồng thời theo user và IP** (hai counter độc lập, không phải key ghép để tránh đổi IP né limit); tenant là safety cap (NÊN) để chống noisy neighbor. IP lấy từ proxy tin cậy, không tin header client tự gửi.
+- **FR-RL-04**: Login/register/quên mật khẩu dùng giới hạn chặt hơn; login giữ account lock hiện có (NFR-SEC-02) và không tiết lộ tài khoản có tồn tại hay không.
+- **FR-RL-05**: Marketplace search, gửi yêu cầu xem phòng, upload ảnh, tải/signed URL tài liệu nhạy cảm và xuất PDF/CSV có policy riêng để chống spam, scrape và lạm dụng chi phí.
+- **FR-RL-06**: Redis lưu counter dạng key + TTL, cập nhật atomic; mọi API instance dùng chung Redis; không dùng sticky session hay counter cục bộ làm nguồn chính.
+- **FR-RL-07**: Khi vượt ngưỡng, trả `429` với body `{code:"rate_limited", message, retryAfterSeconds, requestId}` và header `Retry-After`; không thực thi command, không ghi một phần dữ liệu.
+- **FR-RL-08**: Response rate limit có thể kèm `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`; không trả thông tin nội bộ về policy/Redis.
+- **FR-RL-09**: 429 được ghi metric theo policy/route class/kết quả; không tạo audit event cho từng request bị chặn. Vượt ngưỡng lạm dụng (ví dụ ≥ 50 lần/15 phút cùng subject) hoặc Redis fallback kéo dài phải tạo audit/cảnh báo.
+- **FR-RL-10**: Khi Redis lỗi: auth/register/reset/upload/export dùng local fallback theo instance với ngưỡng **≤ 50% baseline**; public read fail-open; metric + alert; không fallback sang PostgreSQL/MongoDB và không làm hỏng dữ liệu nghiệp vụ.
+- **FR-RL-11**: Health check, metrics nội bộ, job nội bộ được loại trừ; policy là cấu hình versioned theo environment, thay đổi có change log; MVP không có UI chỉnh rate limit.
+
+**Baseline rate limit (có thể tinh chỉnh sau load test, không thấp hơn ngưỡng auth)**
+
+| Route class / endpoint | Subject | Giới hạn baseline | Cửa sổ |
+|---|---|---|---|
+| Login | IP | 5 request | 1 phút |
+| Login thất bại | Tài khoản (hash) | 10 lần thất bại, khóa tạm 15 phút | 15 phút |
+| Register | IP | 3 request | 1 giờ |
+| Quên/đặt lại mật khẩu | Email hash + IP | 3 request/email; 10 request/IP | 1 giờ |
+| Refresh token | User | 60 request | 1 phút |
+| Public marketplace read | IP | 120 request | 1 phút |
+| Marketplace search | IP | 60 request | 1 phút |
+| Gửi yêu cầu xem phòng | IP + phone hash | 5 request/IP; 3 request/phone | 1 giờ |
+| Authenticated read | User | 300 request | 1 phút |
+| Authenticated write | User | 60 request | 1 phút |
+| Upload/finalize ảnh | User | 30 request | 1 giờ |
+| Signed URL / tài liệu nhạy cảm (CCCD) | User | 30 request | 1 phút |
+| Xuất PDF/CSV | User + tenant | 10 request | 1 giờ |
+| Admin read/write | Admin user | 600 read; 120 write | 1 phút |
+| Tenant safety cap *(NÊN)* | Tenant | 6.000 request; 600 write | 1 phút |
 
 ---
 
@@ -385,7 +467,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 
 1. Owner đăng ký bằng email/số điện thoại + mật khẩu.
 2. Hệ thống tạo User + Tenant + membership `owner`; tài khoản `Active` ngay (không đóng phí).
-3. Owner tạo Property → thêm Room → thiết lập bảng giá.
+3. Owner tạo Property → thêm Room → thiết lập bảng giá; có thể dùng **hợp đồng mẫu hệ thống** hoặc tạo mẫu riêng.
 4. Owner mời Staff (nếu có) và gán role/phạm vi.
 5. Owner có thể đăng tin hoặc tạo hợp đồng ngay.
 
@@ -402,10 +484,10 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 
 ### 5.3 Tạo hợp đồng, giao phòng
 
-1. Owner tạo Lease từ Room `Vacant`, khai báo Renter + người ở + CCCD + điều khoản.
-2. Owner ký/xác nhận.
+1. Owner tạo Lease từ Room `Vacant`, chọn **hợp đồng mẫu hệ thống/mẫu riêng** (hoặc soạn riêng), khai báo Renter + người ở + CCCD + điều khoản; mẫu được snapshot vào phiên bản hợp đồng.
+2. Owner ký/xác nhận; hệ thống ghi `LeaseRevision` cho lần tạo.
 3. Renter mở link, đăng nhập/đăng ký, xem hợp đồng, tick đồng ý, ký.
-4. Lease `Active`; hệ thống tạo PDF + hash; Room `Occupied`; tin đóng.
+4. Lease `Active`; hệ thống tạo PDF + hash + revision ký; Room `Occupied`; tin đóng.
 5. Trước khi bàn giao, Owner lập biên bản check-in theo khu vực và gửi Renter (biên bản không chặn Lease `Active`).
 6. Renter xác nhận hoặc phản hồi; biên bản `Locked` khi cả hai đồng ý.
 7. Ghi nhận bàn giao phòng sau khi biên bản đã gửi; Renter bắt đầu nhận thông báo của Property.
@@ -415,10 +497,11 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 1. Cuối kỳ, Owner/Staff nhập chỉ số điện/nước + ảnh đồng hồ.
 2. Renter nhận thông báo, xem ảnh, xác nhận hoặc phản hồi.
 3. Chỉ số `Confirmed` (hoặc quá 72 giờ, Owner phát hành với cờ `unconfirmedReading`).
-4. Hệ thống tạo hóa đơn từ đơn giá đã snapshot; gửi thông báo.
-5. Renter chuyển khoản ngoài hệ thống → tải minh chứng lên hóa đơn.
-6. Hóa đơn `PaymentSubmitted`; Owner kiểm tra và xác nhận → `Paid` (hoặc từ chối kèm lý do → trạng thái trước khi gửi minh chứng: `Issued`/`Overdue`).
-7. Quá hạn: job chỉ chuyển `Issued` → `Overdue`; `PaymentSubmitted` giữ nguyên và gắn cờ trễ; gửi nhắc.
+4. Hệ thống tạo hóa đơn từ đơn giá đã snapshot; hóa đơn ở `PendingRenterConfirmation` và gửi thông báo cho Renter.
+5. Renter xem hóa đơn, **xác nhận** → `Issued`; nếu phản hồi → `Disputed`, Owner void và phát hành lại; quá 72 giờ không phản hồi → `Issued` với cờ `unconfirmedInvoice` + audit.
+6. Renter chuyển khoản ngoài hệ thống → tải minh chứng lên hóa đơn.
+7. Hóa đơn `PaymentSubmitted`; Owner kiểm tra và xác nhận → `Paid` (hoặc từ chối kèm lý do → trạng thái trước khi gửi minh chứng: `Issued`/`Overdue`).
+8. Quá hạn: job chỉ chuyển `Issued` → `Overdue`; `PaymentSubmitted` giữ nguyên và gắn cờ trễ; gửi nhắc.
 
 ### 5.5 Ticket sự cố
 
@@ -432,9 +515,35 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 1. Renter gửi yêu cầu trả phòng (hoặc Lease hết hạn).
 2. Owner xác nhận, tạo biên bản check-out theo cùng khu vực.
 3. Owner/Renter đối chiếu ảnh thủ công; ghi hư hỏng/khấu trừ.
-4. Chốt hóa đơn cuối (điện nước kỳ cuối + khấu trừ nếu có).
+4. Chốt hóa đơn cuối (điện nước kỳ cuối + khấu trừ nếu có); Renter xác nhận hóa đơn cuối (hoặc quá 72 giờ với cờ `unconfirmedInvoice`) trước khi xác nhận thanh toán.
 5. Ghi nhận hoàn cọc (chỉ bản ghi, không chuyển tiền); Lease `Terminated` khi BR-19 hoàn tất.
 6. Hệ thống archive CCCD, đóng quyền Staff với tài liệu; Room về `Vacant`; Owner có thể đăng tin lại.
+
+### 5.7 Gia hạn hợp đồng
+
+1. Job nhắc `EndingSoon` trước `endDate` 30 ngày; Owner mở Lease hiện tại và chọn **Gia hạn** (không tạo Lease mới).
+2. Owner nhập `endDate` mới, giá thuê/điều khoản mới (nếu có), lý do; hệ thống tạo đề xuất gia hạn + `LeaseRevision` nháp.
+3. Renter nhận thông báo, xem nội dung mới và xác nhận; hệ thống tạo `LeaseVersion` mới + revision gia hạn, cập nhật Lease.
+4. Lease trở lại `Active` với `endDate` mới; `startDate` gốc, lịch sử kỳ hạn và revision cũ không đổi; Room tiếp tục `Occupied`.
+5. Nếu Renter không xác nhận, Lease giữ `EndingSoon` và tiếp tục quy trình trả phòng theo 5.6.
+
+### 5.8 Quản lý hợp đồng mẫu
+
+1. Platform Admin tạo/sửa mẫu hệ thống, đặt `code` + `version`, review nội dung và publish.
+2. Owner mở danh sách mẫu: dùng mẫu hệ thống hoặc tạo mẫu riêng của tenant (có thể từ bản sao mẫu hệ thống).
+3. Khi tạo Lease, Owner chọn mẫu + version; hệ thống snapshot vào `LeaseVersion`.
+4. Admin/Owner ngừng áp dụng mẫu: mẫu `Archived`, không dùng cho Lease mới; Lease cũ vẫn giữ snapshot và PDF.
+5. Mọi thao tác tạo/sửa/publish/archive mẫu đều có audit.
+
+### 5.9 Rate limit request
+
+1. Request vào API; reverse proxy tin cậy resolve IP client và route class.
+2. Lớp rate limit IP chạy trước authentication cho mọi route cần bảo vệ.
+3. Sau authentication, lớp rate limit user và IP (hai counter độc lập) + tenant safety cap (nếu bật) chạy trước authorization/command/query.
+4. Redis cập nhật atomic counter + TTL. Nếu còn dưới ngưỡng, request đi tiếp.
+5. Nếu vượt ngưỡng, trả `429` + `Retry-After`; command/query không chạy, không ghi dữ liệu.
+6. Nếu Redis lỗi: auth/nhạy cảm chuyển local fallback theo instance (≤ 50% baseline); public read fail-open; ghi metric + alert.
+7. Metric ghi nhận policy/kết quả; vượt ngưỡng lạm dụng hoặc fallback kéo dài tạo audit/cảnh báo, không audit từng 429.
 
 ---
 
@@ -451,7 +560,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | BR-05 | Một Staff chỉ thuộc một Owner; nếu đã là Staff nơi khác, từ chối lời mời. | Unique membership constraint |
 | BR-06 | Một User có một tài khoản; email/số điện thoại duy nhất; không hỗ trợ gộp tài khoản trong MVP. | Unique index |
 | BR-07 | Owner `Active` ngay khi đăng ký; không có billing/phí nền tảng; Platform Admin có thể `Suspended` kèm lý do. | State machine + audit |
-| BR-08 | Owner `Suspended`: không tạo mới Property/Room/tin/Lease, không đổi giá; **vẫn được nhập chỉ số, phát hành hóa đơn, xác nhận thanh toán, xử lý biên bản/check-out và ghi nhận hoàn cọc cho Lease hiện hữu** để không gián đoạn nghĩa vụ thuê; Renter vẫn xem hợp đồng/hóa đơn, gửi minh chứng, tạo ticket; Staff tiếp tục thao tác trên Lease hiện hữu theo quyền. | Authorization theo trạng thái tenant |
+| BR-08 | Owner `Suspended`: không tạo mới Property/Room/tin/Lease, **không gia hạn Lease**, không đổi giá; **vẫn được nhập chỉ số, phát hành hóa đơn, xác nhận thanh toán, xử lý biên bản/check-out và ghi nhận hoàn cọc cho Lease hiện hữu** để không gián đoạn nghĩa vụ thuê; Renter vẫn xem hợp đồng/hóa đơn, gửi minh chứng, tạo ticket; Staff tiếp tục thao tác trên Lease hiện hữu theo quyền. | Authorization theo trạng thái tenant |
 | BR-48 | Chỉ Owner chính có `staff.manage` và `tenant.settings.write`; hai quyền này không cấp cho Staff, kể cả qua role tùy chỉnh. | Permission grant check |
 
 ### 6.2 Phòng và tin đăng
@@ -469,12 +578,15 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 
 | ID | Quy tắc | Cưỡng chế |
 |---|---|---|
-| BR-15 | Lease chỉ `Active` khi Owner và Renter đã ký; thiếu một bên thì không kích hoạt. | State machine |
-| BR-16 | Nội dung Lease đã ký là bất biến; thay đổi qua phụ lục/phiên bản mới, có xác nhận. | Immutable snapshot + hash |
+| BR-15 | Lease chỉ `Active` khi Owner và Renter đã ký (hoặc đã xác nhận gia hạn); thiếu một bên thì không kích hoạt. | State machine |
+| BR-16 | Nội dung Lease đã ký là bất biến; thay đổi qua phụ lục/phiên bản mới, có xác nhận của các bên; mỗi thay đổi tạo `LeaseRevision` bất biến và audit. | Immutable snapshot + hash + revision |
 | BR-17 | Mỗi Lease có ít nhất một người đại diện; mọi người ở là người lớn phải có CCCD mặt trước/sau; người chưa thành niên ghi chú người giám hộ. | Validation |
-| BR-18 | Xem CCCD của người khác cần quyền `document.cccd.view`; mọi lần xem có audit. Khi Lease kết thúc, CCCD archive; Staff mất quyền xem; Renter đại diện xem được ảnh của chính mình; Owner có quyền nhạy cảm và Platform Admin qua support access xem được ảnh archive. | Permission + lifecycle job |
+| BR-18 | Xem CCCD của người khác cần quyền `document.cccd.view`; mọi lần xem có audit. Khi Lease kết thúc, CCCD archive; Staff mất quyền xem; Renter đại diện xem được ảnh của chính mình; Owner có quyền nhạy cảm xem được ảnh archive. **Platform Admin không được xem ảnh CCCD kể cả khi có support access.** | Permission + lifecycle job + explicit deny |
 | BR-19 | Chấm dứt Lease cần biên bản check-out `Locked` (hoặc quá 72 giờ với cờ `unconfirmedCheckout`) và hóa đơn cuối/hoàn cọc đã xử lý; nếu không thể thu/hoàn, Owner write-off khoản đó với lý do + audit (write-off không thay thế biên bản check-out); quá `endDate` Lease vẫn `EndingSoon` đến khi hoàn tất; Room chỉ về `Vacant` sau đó. | Termination service |
 | BR-49 | Check-in lập sau khi Lease `Active`, trước bàn giao; bàn giao chỉ ghi nhận hoàn tất sau khi biên bản đã gửi Renter; `PendingRenter` không chặn Lease nhưng phải nhắc hàng ngày. | Lease/handover service |
+| BR-51 | Hợp đồng mẫu có version và trạng thái; Lease đã tạo giữ snapshot mẫu + version, sửa/ngừng mẫu không ảnh hưởng Lease hiện hữu. Mẫu hệ thống chỉ Platform Admin quản lý; mẫu tenant do Owner quản lý. | Template versioning + snapshot |
+| BR-52 | Gia hạn **chỉ trên cùng Lease**, không tạo Lease mới; cần Owner và Renter xác nhận; cập nhật `endDate`/giá, tạo `LeaseRevision` + `LeaseVersion`, giữ `startDate` gốc. | Renewal service + state machine |
+| BR-53 | Mọi thay đổi Lease tạo `LeaseRevision` append-only với `revisionNo` tăng đơn điệu, hash trước/sau, actor, lý do; không sửa/xóa revision; revision cũ không bị ghi đè khi gia hạn. | Append-only + unique `(leaseId, revisionNo)` |
 
 ### 6.4 Chỉ số, hóa đơn, thanh toán
 
@@ -489,6 +601,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | BR-26 | Ngày đến hạn mặc định ngày 5 tháng kế tiếp hoặc theo Lease; nhắc trước 3 ngày, đúng hạn, sau 3 ngày, sau 7 ngày; múi giờ `Asia/Ho_Chi_Minh`. | Scheduler |
 | BR-27 | MVP không hỗ trợ thanh toán một phần; xác nhận phải bằng tổng hóa đơn, trừ khi Owner ghi đè có lý do + audit. | Validation |
 | BR-28 | Hóa đơn `Paid` không được void; điều chỉnh phát sinh xử lý bằng hóa đơn điều chỉnh ở phiên bản sau. | State machine |
+| BR-54 | Hóa đơn sau phát hành ở `PendingRenterConfirmation`; chỉ chuyển `Issued` khi Renter xác nhận hoặc quá 72 giờ (cờ `unconfirmedInvoice` + audit); Renter phản hồi thì `Disputed` và không được thanh toán cho đến khi Owner void/reissue. | State machine + scheduler + permission |
 
 ### 6.5 Biên bản, thông báo, ticket
 
@@ -519,6 +632,20 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | BR-46 | Ràng buộc nghiệp vụ chỉ cưỡng chế ở write model (domain + PostgreSQL); read model MongoDB là projection, không phải nguồn sự thật và không được dùng để hợp thức hóa ghi. | Code review + test ràng buộc |
 | BR-47 | Mỗi projection/read model document có thể rebuild từ write DB; projection handler idempotent; không sửa tay read model để "chữa" dữ liệu. | Rebuild job + review |
 | BR-50 | Mọi domain GET/query API chỉ đọc MongoDB read model; query handler không query PostgreSQL. Ngoại lệ hạ tầng: auth/session, permission check, idempotency, support-access gate. Command handler chỉ ghi PostgreSQL + phát event qua CAP outbox. | Architecture test + code review |
+
+### 6.7 Rate limit
+
+| ID | Quy tắc | Cưỡng chế |
+|---|---|---|
+| BR-55 | Mọi endpoint công khai/đã xác thực phải có policy rate limit; lớp IP chạy trước authentication, lớp user/tenant chạy sau authentication nhưng trước authorization/command/query. Endpoint thiếu policy bị coi là lỗi cấu hình và CI fail. | Route registry + architecture test |
+| BR-56 | Counter rate limit chỉ lưu trong Redis dưới key băm; không chứa email, số điện thoại, CCCD, token hay nội dung nghiệp vụ. TTL tối đa 24 giờ; Redis không backup, không rebuild, không phải nguồn sự thật. | Key convention + code review + TTL test |
+| BR-57 | Baseline policy theo bảng 4.10; login/register/reset chặt hơn read/write thường. Chỉ được nới sau load/abuse test và có change log; baseline auth không được nới lỏng hơn giá trị đã chốt nếu chưa có phê duyệt. | Versioned config + review |
+| BR-58 | Vượt ngưỡng trả `429` + `Retry-After`, body thống nhất `rate_limited`; không chạy command, không ghi một phần dữ liệu. Login dùng cùng thông điệp cho mọi tài khoản để không lộ tài khoản tồn tại. | Middleware + E2E |
+| BR-59 | IP client chỉ lấy từ reverse proxy tin cậy; bỏ qua `X-Forwarded-For`/`Forwarded` do client tự gửi hoặc proxy không nằm trong allowlist. | Proxy config + test |
+| BR-60 | Redis lỗi: auth/nhạy cảm dùng local fallback theo instance với ngưỡng **≤ 50% baseline**; public read fail-open; metric + alert. Không fallback counter sang PostgreSQL/MongoDB. | Fallback handler + chaos test |
+| BR-61 | Không tạo audit event cho từng 429; chỉ audit/cảnh báo khi vượt ngưỡng lạm dụng (≥ 50 lần/15 phút cùng subject) hoặc Redis fallback kéo dài. 429 vẫn có metric và `requestId`. | Audit gate + metric |
+| BR-62 | Health check, metrics nội bộ, job nội bộ được loại trừ; mọi route khác kể cả GET công khai đều bị giới hạn. Tenant safety cap (nếu bật) không thay thế giới hạn user/IP. | Route registry + config |
+| BR-63 | Rate limit không thay thế authorization, account lock, idempotency hay audit; request bị 429 không được coi là đã qua authorization và không cấp quyền. | Authorization test + review |
 
 ---
 
@@ -569,12 +696,12 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 |---|---|---|
 | `Draft` | Owner đang soạn | `PendingRenterSignature`, `Cancelled` |
 | `PendingRenterSignature` | Owner đã ký, chờ Renter | `Active`, `Cancelled` |
-| `Active` | Đang hiệu lực | `EndingSoon`, `Terminated` |
-| `EndingSoon` | Đang trong quá trình kết thúc (bắt đầu trước `endDate` 30 ngày) | `Terminated` (sau khi BR-19 hoàn tất; gia hạn tạo Lease mới) |
+| `Active` | Đang hiệu lực | `EndingSoon`, `Active` (gia hạn), `Terminated` |
+| `EndingSoon` | Đang trong quá trình kết thúc (bắt đầu trước `endDate` 30 ngày) | `Active` (gia hạn được xác nhận), `Terminated` (sau khi BR-19 hoàn tất) |
 | `Terminated` | Đã kết thúc | — |
 | `Cancelled` | Hủy trước khi hiệu lực | — |
 
-> Quá `endDate` mà chưa hoàn tất check-out/hóa đơn cuối, Lease vẫn ở `EndingSoon`, không tự chuyển `Terminated` (D-19).
+> Quá `endDate` mà chưa hoàn tất check-out/hóa đơn cuối, Lease vẫn ở `EndingSoon`, không tự chuyển `Terminated` (D-19). **Gia hạn không tạo Lease mới**; Lease quay lại `Active` với `endDate` mới và tạo `LeaseRevision`/`LeaseVersion` (D-23).
 
 ### 7.5 Condition Report
 
@@ -601,13 +728,15 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 
 | Trạng thái | Ý nghĩa | Chuyển tiếp |
 |---|---|---|
-| `Issued` | Đã phát hành, chưa thanh toán | `PaymentSubmitted`, `Overdue`, `Void` |
+| `PendingRenterConfirmation` | Đã phát hành, chờ Renter xác nhận | `Issued` (Renter xác nhận hoặc quá 72 giờ), `Disputed`, `Void` |
+| `Disputed` | Renter phản hồi nội dung hóa đơn | `Void` (bắt buộc void/reissue) |
+| `Issued` | Đã xác nhận, chưa thanh toán | `PaymentSubmitted`, `Overdue`, `Void` |
 | `PaymentSubmitted` | Có minh chứng, chờ Owner | `Paid`; `Issued`/`Overdue` (từ chối, quay về trạng thái trước khi gửi minh chứng) |
 | `Paid` | Owner đã xác nhận | — |
 | `Overdue` | Quá hạn | `PaymentSubmitted`, `Void` |
 | `Void` | Hủy, thay thế bằng hóa đơn khác | — |
 
-> Job quá hạn chỉ tác động hóa đơn `Issued`; `PaymentSubmitted` quá hạn giữ nguyên trạng thái và hiển thị cờ trễ (D-17).
+> Job quá hạn chỉ tác động hóa đơn `Issued`; `PaymentSubmitted` quá hạn giữ nguyên trạng thái và hiển thị cờ trễ (D-17). Hóa đơn `PendingRenterConfirmation`/`Disputed` không chuyển `Overdue`; chỉ hiển thị cờ trễ. Quá 72 giờ chờ xác nhận, job chuyển `PendingRenterConfirmation` → `Issued` với cờ `unconfirmedInvoice` + audit (D-26).
 
 ### 7.8 Ticket
 
@@ -630,6 +759,16 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | `Closed` | Kết thúc | — |
 | `Cancelled` | Hủy | — |
 
+### 7.10 Lease Template
+
+| Trạng thái | Ý nghĩa | Chuyển tiếp |
+|---|---|---|
+| `Draft` | Đang soạn mẫu | `Published`, `Archived` |
+| `Published` | Dùng được để tạo Lease | `Archived` |
+| `Archived` | Ngừng áp dụng cho Lease mới; Lease cũ giữ snapshot | — |
+
+> Mỗi lần sửa nội dung mẫu `Published` tạo **version mới**; Lease đã tạo luôn tham chiếu version cũ (D-22). Không có trạng thái sửa trực tiếp nội dung version đã publish.
+
 ---
 
 ## 8. Yêu cầu phi chức năng
@@ -639,7 +778,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | ID | Yêu cầu | Kiểm chứng |
 |---|---|---|
 | NFR-SEC-01 | TLS 1.2+ cho mọi kết nối; HSTS; security headers cơ bản. | Cấu hình + scan |
-| NFR-SEC-02 | Mật khẩu hash Argon2id; tối thiểu 10 ký tự; rate limit 5 lần/phút/IP; khóa tạm sau 10 lần sai/15 phút. | Auth test |
+| NFR-SEC-02 | Mật khẩu hash Argon2id; tối thiểu 10 ký tự; rate limit login 5 request/phút/IP qua Redis; khóa tạm tài khoản sau 10 lần sai/15 phút; không lộ tài khoản tồn tại. | Auth test + Redis test |
 | NFR-SEC-03 | Access token 15 phút; refresh token 30 ngày, rotation; thu hồi khi đổi mật khẩu/khóa tài khoản. | Auth test |
 | NFR-SEC-04 | Mọi endpoint kiểm tra quyền phía server; deny-by-default; không tin UI. | Authorization test |
 | NFR-SEC-05 | 100% endpoint tenant-scoped có test tiêu cực cross-tenant; CI fail nếu thiếu. | CI gate |
@@ -648,8 +787,9 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | NFR-SEC-08 | Không log CCCD, ảnh biên lai, token, mật khẩu; không lưu các giá trị này trong audit `before`/`after`; che PII trong log. | Log review + audit review |
 | NFR-SEC-09 | Mã hóa at-rest do nhà cung cấp managed; secret trong secret manager, không commit. | Config review |
 | NFR-SEC-10 | Giảm thiểu OWASP Top 10; quét dependency trong CI. | Scan |
+| NFR-SEC-11 | 100% endpoint công khai/đã xác thực có rate limit Redis theo route class; vượt ngưỡng trả `429` + `Retry-After`; key băm không PII; IP lấy từ proxy tin cậy. | Architecture test + abuse test + key review |
 | NFR-PRV-01 | Có chính sách riêng tư/consent; yêu cầu xóa/sửa dữ liệu xử lý thủ công trong MVP. | Quy trình |
-| NFR-PRV-02 | CCCD của người khác chỉ truy cập qua quyền nhạy cảm; Renter đại diện xem được ảnh của chính mình; mọi lần xem có audit. | Test + audit |
+| NFR-PRV-02 | CCCD của người khác chỉ truy cập qua quyền nhạy cảm; Renter đại diện xem được ảnh của chính mình; **Platform Admin bị từ chối tuyệt đối, kể cả support access**; mọi lần xem có audit. | Test + audit + negative authorization test |
 
 ### 8.2 Hiệu năng và khả năng mở rộng
 
@@ -659,7 +799,9 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | NFR-PERF-02 | Tìm kiếm marketplace p95 ≤ 500 ms với 10.000 tin. | Load test |
 | NFR-PERF-03 | Danh sách ảnh dùng thumbnail + lazy load; không tải ảnh gốc trong list. | UI review |
 | NFR-PERF-04 | Upload ảnh 5 MB trên mạng 1.5 Mbps hoàn tất ≤ 30 giây, có retry; không tạo bản ghi trùng. | Network throttle test |
+| NFR-PERF-05 | Rate limit overhead p95 ≤ 10 ms/request; Redis p95 ≤ 5 ms; không làm vượt NFR-PERF-01. | Load test + Redis metric |
 | NFR-SCL-01 | Thiết kế cho 1.000 Owner, 20.000 Room, 100.000 hóa đơn/năm; API stateless, scale ngang; Hangfire worker chạy riêng, scale ngang với distributed lock. | Architecture review |
+| NFR-SCL-02 | Redis rate limit dùng chung/HA cho mọi API instance; không sticky session; counter nhất quán khi scale ngang; Redis không chứa dữ liệu nghiệp vụ. | Architecture review + multi-instance test |
 
 ### 8.3 Độ tin cậy và vận hành
 
@@ -668,10 +810,12 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | NFR-AVL-01 | Availability mục tiêu 99.5%/tháng, không tính bảo trì có thông báo. | Monitoring |
 | NFR-AVL-02 | Backup hằng ngày + PITR 7 ngày cho PostgreSQL; RPO ≤ 1 giờ, RTO ≤ 4 giờ; MongoDB read model rebuild từ PostgreSQL khi mất dữ liệu; diễn tập restore mỗi quý. | Restore drill |
 | NFR-AVL-03 | Push thất bại không làm mất thông báo; inbox vẫn có bản ghi. | Failure test |
+| NFR-AVL-04 | Redis rate limit lỗi: auth/nhạy cảm dùng local fallback ≤ 50% baseline, public read fail-open; alert trong ≤ 1 phút; không mất dữ liệu nghiệp vụ, không fallback sang PostgreSQL/MongoDB. | Chaos test + alert |
 | NFR-OBS-01 | Log có cấu trúc, `requestId`, `tenantId`, `userId` (không PII); trace lỗi xuyên service. | Log review |
 | NFR-OBS-02 | Error tracking + metric + alert cho 5xx, job lag, push failure, upload failure. | Dashboard |
 | NFR-OBS-03 | Audit tách khỏi application log; không phụ thuộc log retention. | Architecture review |
 | NFR-OBS-04 | Audit mọi thao tác của actor đã xác thực ghi bất đồng bộ qua CAP outbox, không chặn response; activity log đọc từ read model; retention theo mục 11. | Load test + architecture review |
+| NFR-OBS-05 | Metric rate limit theo policy/route class/kết quả + Redis latency/error; alert khi 429 tăng bất thường, Redis lỗi hoặc fallback kéo dài; 429 không tạo audit từng request; metric/log dùng subject hash, không log email/số điện thoại/IP thô. | Dashboard + alert test |
 
 ### 8.4 Web responsive và mạng yếu
 
@@ -694,6 +838,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | NFR-DAT-05 | Read model MongoDB là projection rebuild được từ PostgreSQL; lag p95 ≤ 2 giây; rebuild toàn bộ ≤ 60 phút với dữ liệu mục tiêu NFR-SCL-01. | Metric + rebuild drill |
 | NFR-DAT-06 | Tiền lưu số nguyên 64-bit (đồng) ở write DB và read model; không dùng `double`. | Code review + test |
 | NFR-DAT-07 | 100% domain GET/query API đọc MongoDB read model; query handler không query PostgreSQL (trừ auth/session, permission, idempotency); architecture test trong CI. | Architecture test |
+| NFR-DAT-08 | Redis chỉ lưu counter rate limit ephemeral (TTL ≤ 24 giờ), không backup/rebuild, không chứa PII/nghiệp vụ; mất Redis không làm mất dữ liệu nguồn sự thật. | Code review + chaos test |
 | NFR-UX-01 | Tiếng Việt, responsive-first; luồng chính hoàn tất được trên viewport 360 px (mobile browser) và desktop 1280 px. | UI review |
 | NFR-UX-02 | Touch target ≥ 44 px; label rõ; hỗ trợ screen reader cho luồng chính; tương phản đạt WCAG AA. | Accessibility check |
 | NFR-UX-03 | Lỗi hiển thị hành động khắc phục; không lộ stack trace. | Manual test |
@@ -722,8 +867,10 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | `ListingRevision` | Tenant | listingId, versionNo, title, description, price, amenities, status, feedback | Snapshot bất biến khi duyệt |
 | `ListingPhoto` | Tenant | revisionId, objectKey, order, isCover | Private |
 | `ViewingRequest` | Tenant | listingId, seekerName, phone, message, preferredAt, status | Seeker không cần tài khoản |
-| `Lease` | Tenant | tenantId, roomId, representativeUserId, startDate, endDate, rent, deposit, status, version | Một Active/Room |
-| `LeaseVersion` | Tenant | leaseId, versionNo, contentHash, snapshot | Bất biến |
+| `LeaseTemplate` | Toàn nền tảng/tenant | scope (system/tenant), tenantId, code, name, version, body, status | Mẫu hệ thống do Admin quản lý; mẫu tenant do Owner quản lý; version bất biến khi publish |
+| `Lease` | Tenant | tenantId, roomId, representativeUserId, templateId, templateVersion, startDate, endDate, rent, deposit, status, currentRevisionNo, version | Một Active/Room; gia hạn trên cùng Lease |
+| `LeaseVersion` | Tenant | leaseId, versionNo, contentHash, snapshot, templateId, templateVersion | Bất biến; snapshot mẫu + nội dung tại thời điểm ký/gia hạn |
+| `LeaseRevision` | Tenant | leaseId, revisionNo, changeType, beforeHash, afterHash, snapshot, actorUserId, reason, createdAt | Bất biến, append-only; mọi thay đổi hợp đồng (D-25) |
 | `Occupant` | Tenant | leaseId, fullName, dob, idNumber, phone, role | Người đại diện + ở cùng; chỉ hồ sơ, không có tài khoản (D-16) |
 | `OccupantDocument` | Tenant | occupantId, type, objectKey, status | CCCD, nhạy cảm |
 | `LeaseSignature` | Tenant | leaseVersionId, userId, role, signedAt, ip, device, hash | Xác nhận trên web |
@@ -731,14 +878,14 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | `ConditionArea` | Tenant | reportId, name, note, condition | |
 | `ConditionPhoto` | Tenant | areaId, objectKey, capturedAt, uploadedBy | Immutable sau khóa |
 | `MeterReading` | Tenant | roomId, utility, period, previous, current, photoKey, status, confirmedAt | Unique (room, utility, period) |
-| `Invoice` | Tenant | leaseId, period, dueDate, total, status, issuedAt, voidReason | Immutable sau phát hành; cờ `unconfirmedReading` |
+| `Invoice` | Tenant | leaseId, period, dueDate, total, status, issuedAt, confirmedAt, unconfirmedInvoice, voidReason | Immutable sau phát hành; chờ Renter xác nhận; cờ `unconfirmedReading`/`unconfirmedInvoice` |
 | `InvoiceLine` | Tenant | invoiceId, type, description, quantity, unitPrice, amount | Snapshot |
 | `PaymentRecord` | Tenant | invoiceId, amount, paidAt, proofKey, reference, status, confirmedBy | Không xử lý tiền |
 | `Ticket` | Tenant | roomId, createdBy, category, title, description, priority, status | |
 | `TicketMessage` | Tenant | ticketId, authorId, body, isInternal | Internal note |
 | `Notification` | Toàn nền tảng/tenant | recipientId, type, entityType, entityId, title, body, readAt | Inbox |
 | `DeviceToken` | Toàn nền tảng | userId, platform, token | Web Push subscription |
-| `AuditEvent` | Toàn nền tảng/tenant | actor, tenantId, action, entity, before/after, ip, requestId, reason | Append-only; before/after đã che PII (D-18) |
+| `AuditEvent` | Toàn nền tảng/tenant | actor, tenantId, action, entity, leaseRevisionId, before/after, ip, requestId, reason | Append-only; before/after đã che PII (D-18); Lease dùng `leaseRevisionId` |
 | `FileObject` | Toàn nền tảng/tenant | tenantId, key, contentType, size, checksum, owner | Private bucket |
 | `IdempotencyKey` | Toàn nền tảng | key, userId, endpoint, responseHash, expiresAt | Chống trùng |
 
@@ -747,6 +894,8 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 > Các ràng buộc dưới đây cưỡng chế ở **PostgreSQL (write DB)**. MongoDB chỉ là read model: không thay thế ràng buộc và có thể rebuild.
 
 - `Lease`: partial unique index trên `roomId` với `status = 'Active'`.
+- `LeaseRevision`: unique `(leaseId, revisionNo)`; append-only (DB từ chối UPDATE/DELETE).
+- `LeaseTemplate`: unique `(scope, COALESCE(tenantId,''), code, version)`; chỉ một version `Published`/`Draft` hoạt động cho mỗi `(scope, tenantId, code)`.
 - `Room`: unique `(tenantId, propertyId, code)`.
 - `ListingRevision`: unique `(listingId, versionNo)`; partial unique một revision `PendingReview`/`Draft` hoạt động cho mỗi Listing.
 - `MeterReading`: unique `(roomId, utility, period)`.
@@ -762,8 +911,9 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 |---|---|---|
 | **Public** | Tin đăng đã duyệt, ảnh phòng đã duyệt | Được phục vụ cho Seeker |
 | **Internal** | Property/Room, hợp đồng, hóa đơn, ticket | Tenant isolation + auth |
-| **Sensitive** | CCCD, số điện thoại, ảnh biên lai, địa chỉ chính xác | Quyền nhạy cảm, audit, signed URL, che log |
+| **Sensitive** | CCCD, số điện thoại, ảnh biên lai, địa chỉ chính xác | Quyền nhạy cảm, audit, signed URL, che log; **CCCD không cấp cho Platform Admin** |
 | **Secret** | Mật khẩu hash, refresh token, khóa ký, secret hạ tầng | Secret manager, không log |
+| **Ephemeral** | Rate limit counter/key (subject hash), TTL ngắn | Redis, không backup, không PII, không phải nguồn sự thật |
 
 ### 9.4 Cách ly tenant
 
@@ -776,7 +926,17 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - Truy vấn công khai (marketplace) dùng projection riêng, chỉ đọc bản `Published`.
 - Renter đại diện dùng `Lease.representativeUserId` để truy vấn xuyên tenant; không dùng `TenantId` của Renter.
 - File object key: `tenant/{tenantId}/{entity}/{id}/{fileId}`; signed URL kiểm tra quyền trước khi ký.
-- Platform Admin support access dùng token ngắn hạn, ghi audit, không bypass authorization thường.
+- Platform Admin support access dùng token ngắn hạn, ghi audit, không bypass authorization thường; **middleware ảnh CCCD luôn từ chối Platform Admin** trước khi kiểm tra support access.
+- `LeaseRevision` và `LeaseVersion` là write-model append-only; projection timeline chỉ đọc, không cập nhật ngược.
+
+### 9.5 Rate limit store (Redis, ephemeral)
+
+- Key pattern: `rl:{policy}:{subjectType}:{subjectHash}:{tenantHash?}:{windowStart}`; `subjectHash` = HMAC/SHA-256 của IP/user/email/phone, không lưu giá trị gốc.
+- Value: counter + metadata tối thiểu (`limit`, `windowSeconds`, `firstSeen`); cập nhật atomic bằng Lua/`INCR` + `EXPIRE`.
+- TTL = độ dài cửa sổ + 1 phút; tối đa 24 giờ. Không backup, không rebuild, không dùng làm audit.
+- Counter theo user/IP/tenant; tenant safety cap dùng key riêng; không chứa nội dung hợp đồng, CCCD, ảnh, token.
+- Mất Redis: chỉ mất counter tạm thời; local fallback/auth và fail-open/public read theo D-28; không ảnh hưởng PostgreSQL/MongoDB.
+- Policy rate limit là config versioned (không phải bảng nghiệp vụ); thay đổi qua deploy/change log, không có UI tenant tự chỉnh trong MVP.
 
 ---
 
@@ -797,6 +957,8 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | `listing.write` | Tin đăng | Tạo/sửa/gửi tin | Không |
 | `lease.read` | Hợp đồng | Xem hợp đồng | Không |
 | `lease.create` | Hợp đồng | Tạo hợp đồng | Không |
+| `lease.renew` | Hợp đồng | Gia hạn hợp đồng trên cùng Lease | Không |
+| `lease.template.manage` | Hợp đồng | Tạo/sửa/ngừng hợp đồng mẫu của tenant | Không |
 | `lease.terminate` | Hợp đồng | Chấm dứt hợp đồng | Có |
 | `document.cccd.view` | Tài liệu | Xem ảnh CCCD | Có |
 | `condition.read` | Biên bản | Xem biên bản | Không |
@@ -812,14 +974,17 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | `audit.read` | Audit | Xem audit tenant | Không |
 | `platform.owner.manage` | Platform | Khóa/mở Owner | Có |
 | `platform.listing.moderate` | Platform | Duyệt/từ chối tin | Có |
+| `platform.lease.template.manage` | Platform | Tạo/sửa/ngừng hợp đồng mẫu hệ thống | Có |
 | `platform.support.access` | Platform | Support access có lý do | Có |
 
 **Quy tắc cấp quyền**
 
 - Quyền nhạy cảm phải được bật riêng, hiển thị cảnh báo, và ghi audit khi cấp/thu hồi.
 - `manager` mặc định không có `document.cccd.view`, `payment.confirm`, `lease.terminate`, `staff.manage`, `tariff.write`.
+- `document.cccd.view` chỉ cấp cho role tenant; **không cấp cho Platform permission và Platform Admin luôn bị từ chối ở endpoint ảnh CCCD** (D-24).
 - Chỉ Owner chính có `staff.manage` và `tenant.settings.write`; không cấp hai quyền này cho Staff và không thể xóa quyền của Owner chính (BR-48).
 - Platform permission không thể gán cho tenant role.
+- Rate limit là policy hạ tầng, **không phải permission tenant**: không cấp qua role, không có UI tenant tự chỉnh trong MVP; policy theo environment (D-29).
 
 ---
 
@@ -833,12 +998,13 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - Đăng nhập thành công/thất bại, đổi mật khẩu, thu hồi phiên.
 - Tạo/sửa/lưu trữ Property, Room, bảng giá.
 - Tạo/sửa/gửi/duyệt/từ chối/đóng tin.
-- Tạo/sửa/ký/chấm dứt Lease; xem CCCD; archive CCCD.
+- Tạo/sửa/ký/gia hạn/chấm dứt/hủy Lease; mọi `LeaseRevision`; xem CCCD; archive CCCD; quản lý hợp đồng mẫu.
 - Tạo/khóa biên bản; ghi nhận khấu trừ/hoàn cọc.
 - Nhập/sửa/xác nhận/phản hồi chỉ số.
-- Phát hành/void hóa đơn; gửi/xác nhận/từ chối thanh toán.
+- Phát hành/void hóa đơn; Renter xác nhận/phản hồi hóa đơn; gửi/xác nhận/từ chối thanh toán.
 - Gửi thông báo Property; thay đổi ticket.
 - Mời/xóa/khóa Staff; thay đổi role/permission.
+- Rate limit: audit/cảnh báo khi vượt ngưỡng lạm dụng (≥ 50 lần/15 phút cùng subject), Redis fallback kéo dài hoặc thay đổi policy; **không audit từng request 429**.
 - Platform Admin khóa/mở Owner; support access; duyệt/từ chối tin.
 
 ### 11.2 Chính sách lưu trữ đề xuất
@@ -846,12 +1012,16 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | Dữ liệu | Thời hạn | Ghi chú |
 |---|---|---|
 | Hợp đồng, phụ lục, chữ ký | 10 năm sau khi kết thúc | Đề xuất, cần xác nhận pháp lý |
+| `LeaseRevision`, `LeaseVersion` | 10 năm sau khi Lease kết thúc | Đề xuất; append-only |
+| Hợp đồng mẫu (mọi version) | 10 năm sau khi archive | Giữ để đối chiếu Lease cũ |
 | Hóa đơn, thanh toán, audit | 10 năm | Đề xuất |
 | CCCD | 24 tháng sau khi Lease kết thúc, sau đó xóa cứng | Đề xuất, cần xác nhận |
 | Ảnh biên bản | 24 tháng sau khi Lease kết thúc | Đề xuất |
 | Tin đăng + ảnh | 12 tháng sau khi đóng | |
 | Ticket | 24 tháng sau khi đóng | |
 | Notification | 12 tháng | |
+| Rate limit counter (Redis) | TTL theo policy, tối đa 24 giờ | Ephemeral, không backup |
+| Rate limit metric/audit lạm dụng | 90 ngày (metric); audit theo mục audit | Không chứa PII |
 | Application log | 90 ngày | |
 | Backup | 30 ngày | PITR 7 ngày |
 
@@ -869,41 +1039,42 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | Property/Room/Tariff | Báo cáo vi phạm tin | Đánh giá/review |
 | Listing + moderation + revision | Xuất CSV audit | Báo cáo doanh thu/dashboard nâng cao |
 | Marketplace search + viewing request | Màn hình quản lý thiết bị | Đa ngôn ngữ |
-| Lease + occupant + CCCD + sign | Thông báo email giao dịch | Chat nhóm/realtime |
+| Lease + template + occupant + CCCD + sign + revision | Thông báo email giao dịch | Chat nhóm/realtime |
 | Condition report + photo | | So sánh ảnh tự động/AI |
-| Meter + invoice + payment proof/confirm | | Thanh toán online/ví |
+| Meter + invoice + Renter confirm + payment proof/confirm | | Thanh toán online/ví |
 | Push + inbox + Property broadcast | | Billing/phí nền tảng |
+| Rate limit API + Redis + 429/Retry-After | | WAF/DDoS chuyên dụng, CAPTCHA |
 | Ticket | | Offline mode |
-| Admin console (owner, moderation) | | SEO/quảng cáo trả phí cho marketplace công khai |
+| Admin console (owner, moderation, contract template) | | SEO/quảng cáo trả phí cho marketplace công khai |
 | Audit viewer | | App native iOS/Android |
 
 ### 12.2 Epic
 
 | Epic | Kết quả | Phụ thuộc |
 |---|---|---|
-| **E0 — Nền tảng kỹ thuật** | Repo, CI, môi trường, PostgreSQL + MongoDB, storage, Hangfire, auth skeleton, CQRS + CAP outbox + projection skeleton, test harness, ADR chi tiết tech stack (D-14) | — |
-| **E1 — Danh tính, tenant, RBAC, audit** | Owner/Staff/Renter, tenant auto, role, audit, isolation tests | E0 |
+| **E0 — Nền tảng kỹ thuật** | Repo, CI, môi trường, PostgreSQL + MongoDB + Redis, storage, Hangfire, auth skeleton, rate limit middleware + policy registry, CQRS + CAP outbox + projection skeleton, test harness, ADR chi tiết tech stack (D-14, D-27) | — |
+| **E1 — Danh tính, tenant, RBAC, audit** | Owner/Staff/Renter, tenant auto, role, audit, isolation tests, rate limit auth/login/register/reset | E0 |
 | **E2 — Property/Room/Tariff** | CRUD, trạng thái phòng, bảng giá | E1 |
 | **E3 — Listing/Marketplace/Moderation** | Tin, ảnh, duyệt, revision, tìm kiếm, viewing request, admin console | E2 |
-| **E4 — Lease/Signing/Occupants** | Hợp đồng, lời mời, người ở, CCCD, ký, PDF, archive | E2, E3 |
+| **E4 — Lease/Template/Signing/Occupants/Revision** | Hợp đồng, mẫu hệ thống/tenant, lời mời, người ở, CCCD, ký, PDF, revision, gia hạn, archive | E2, E3 |
 | **E5 — Condition Report** | Check-in/out, ảnh, xác nhận, khóa, khấu trừ, hoàn cọc | E4 |
-| **E6 — Meter/Invoice/Payment** | Chỉ số, xác nhận, hóa đơn, minh chứng, xác nhận thanh toán, nhắc hạn | E4 |
+| **E6 — Meter/Invoice/Confirmation/Payment** | Chỉ số, xác nhận, hóa đơn, **Renter xác nhận hóa đơn**, minh chứng, xác nhận thanh toán, nhắc hạn | E4 |
 | **E7 — Notification/Ticket/Audit UI** | Push/inbox, broadcast, ticket, audit viewer | E1–E6 |
-| **E8 — Hardening/Pilot** | Load/security test, backup/restore, UAT, runbook, pilot | E0–E7 |
+| **E8 — Hardening/Pilot** | Load/security/abuse test (rate limit, 429, Redis failure), backup/restore, UAT, runbook, pilot | E0–E7 |
 
 ### 12.3 Lộ trình sprint (một người, 2 tuần/sprint)
 
 | Sprint | Thời lượng | Mục tiêu | Deliverable | Exit criteria |
 |---|---|---|---|---|
-| **S0** | 1 tuần | Dựng nền tảng theo stack đã chốt | ADR chi tiết (layering DDD, command/query, CAP outbox/projection, Hangfire), repo, CI, dev/staging, PostgreSQL + MongoDB, storage, push spike, tenant-isolation test harness | Deploy "hello" + CI xanh + ADR được duyệt |
-| **S1** | 2 tuần | E1 | Auth, tenant auto, Staff invite, role/permission, audit, session | Owner đăng ký/đăng nhập; Staff chỉ một Owner; test cross-tenant pass |
+| **S0** | 1 tuần | Dựng nền tảng theo stack đã chốt | ADR chi tiết (layering DDD, command/query, CAP outbox/projection, Hangfire, Redis rate limit), repo, CI, dev/staging, PostgreSQL + MongoDB + Redis, storage, push spike, tenant-isolation test harness | Deploy "hello" + CI xanh + ADR được duyệt; Redis rate limit smoke test |
+| **S1** | 2 tuần | E1 | Auth, tenant auto, Staff invite, role/permission, audit, session, rate limit auth/login/register/reset | Owner đăng ký/đăng nhập; Staff chỉ một Owner; test cross-tenant pass; login vượt ngưỡng trả 429 |
 | **S2** | 2 tuần | E2 | Property/Room/Tariff, trạng thái phòng, web app shell responsive | CRUD đầy đủ; Room state machine; test quyền |
 | **S3** | 2 tuần | E3 | Listing, upload ảnh, moderation, revision, marketplace search, viewing request | Seeker tìm thấy tin đã duyệt; sửa tin không đổi bản công khai; admin duyệt/từ chối |
-| **S4** | 2 tuần | E4 | Lease, invite, occupants, CCCD, sign, PDF, archive | Hai bên ký → Active; PDF hash khớp; CCCD archive khi kết thúc |
+| **S4** | 2 tuần | E4 | Lease, template hệ thống/tenant, invite, occupants, CCCD, sign, PDF, revision, gia hạn, archive | Hai bên ký → Active; template snapshot đúng version; renewal cùng Lease; PDF hash khớp; revision append-only; CCCD archive khi kết thúc |
 | **S5** | 2 tuần | E5 | Check-in/out, ảnh theo khu vực, xác nhận/khóa, khấu trừ, hoàn cọc | Biên bản khóa bất biến; ảnh có timestamp; PDF xuất được |
-| **S6** | 2 tuần | E6 | Meter, renter confirm, invoice, payment proof, owner confirm, reminders | Vòng hóa đơn E2E; trạng thái đúng; không có thanh toán online |
+| **S6** | 2 tuần | E6 | Meter, renter confirm, invoice, **renter invoice confirm**, payment proof, owner confirm, reminders | Vòng hóa đơn E2E; Renter xác nhận hóa đơn trước khi trả; trạng thái đúng; không có thanh toán online |
 | **S7** | 2 tuần | E7 | Push/inbox, Property broadcast, ticket, audit viewer | Broadcast đúng đối tượng; ticket flow; audit thao tác nhạy cảm |
-| **S8** | 1–2 tuần | E8 | Load/security test, backup/restore, UAT, runbook, pilot | Đạt SC-03/05/06; pilot 5–10 Owner |
+| **S8** | 1–2 tuần | E8 | Load/security/abuse test (rate limit, 429, Redis failure), backup/restore, UAT, runbook, pilot | Đạt SC-03/05/06/08; pilot 5–10 Owner |
 
 **Tổng**: khoảng 17–18 tuần, chưa gồm buffer 20%.
 
@@ -913,7 +1084,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - Task ≤ 1 ngày; nếu > 2 ngày phải tách.
 - Mỗi task phải tham chiếu `FR-*`/`AC-*`, có authorization + tenant isolation + audit cho mọi thao tác của actor đã xác thực.
 - Không có task "làm sau"; không commit code chết, không mock trong nhánh chính.
-- Thứ tự trong sprint: write schema/migration → domain/state machine → command handler → CAP outbox → projection read model → query API → UI → E2E → demo.
+- Thứ tự trong sprint: write schema/migration → domain/state machine → command handler → CAP outbox → projection read model → query API → rate limit policy + test → UI → E2E → demo.
 - Mỗi sprint bắt đầu bằng cập nhật spec/change proposal và kết thúc bằng demo + retrospective.
 - WIP limit = 1; buffer 20% cho bug/UAT.
 
@@ -929,6 +1100,11 @@ Một task chỉ `Done` khi:
 - [ ] Hangfire job (nếu có) idempotent, retry an toàn, không giữ transaction dài.
 - [ ] Domain GET/query handler chỉ đọc MongoDB; architecture test xác nhận không có query PostgreSQL trong handler.
 - [ ] Audit event được ghi cho mọi thao tác của actor đã xác thực và thao tác nhạy cảm.
+- [ ] Mọi thay đổi Lease tạo `LeaseRevision` append-only; gia hạn không tạo Lease mới; template snapshot đúng version.
+- [ ] Admin bị từ chối ở mọi endpoint ảnh CCCD, kể cả support access.
+- [ ] Hóa đơn chỉ chuyển `Issued` sau khi Renter xác nhận hoặc quá 72 giờ với cờ `unconfirmedInvoice` + audit.
+- [ ] Mọi endpoint công khai/đã xác thực có policy rate limit Redis; test 429 + `Retry-After`; key không PII; Redis lỗi có fallback đúng D-28.
+- [ ] Rate limit test đa instance: hai API instance dùng chung counter; request bị 429 không ghi dữ liệu, không audit từng request.
 - [ ] API trả lỗi đúng mã, không lộ stack trace/PII.
 - [ ] UI xử lý loading/empty/error/retry.
 - [ ] UI responsive: không cuộn ngang ở 360 px, dùng được ở desktop 1280 px.
@@ -940,9 +1116,10 @@ Một task chỉ `Done` khi:
 - Không còn lỗi P0/P1.
 - Bộ test cách ly tenant xanh 100%.
 - Bộ test E2E vòng thuê xanh.
-- Load test đạt NFR-PERF-01/02.
+- Load test đạt NFR-PERF-01/02/05.
+- Abuse test rate limit đạt SC-08; 429/Retry-After đúng; Redis failure drill pass.
 - Backup/restore diễn tập thành công.
-- Runbook: deploy, rollback, backup, sự cố push, sự cố upload.
+- Runbook: deploy, rollback, backup, sự cố push, sự cố upload, sự cố Redis/rate limit.
 - Chính sách quyền riêng tư/consent và hướng dẫn xử lý dữ liệu nhạy cảm.
 
 ---
@@ -958,9 +1135,9 @@ Một task chỉ `Done` khi:
 | AC-RBAC-01 | Given Staff không có `document.cccd.view`, When mở ảnh CCCD, Then `403`, không trả URL, có audit. |
 | AC-RBAC-02 | Given Staff được giao Property P1, When thao tác trên Property P2 cùng tenant, Then `403`. |
 | AC-RBAC-03 | Given Owner thu hồi role của Staff, When Staff dùng token cũ, Then bị từ chối ngay. |
-| AC-RBAC-04 | Given Platform Admin mở support access, When chưa nhập lý do hoặc quá 24 giờ, Then bị chặn; khi truy cập, Then có audit và mặc định chỉ đọc. |
+| AC-RBAC-04 | Given Platform Admin mở support access, When chưa nhập lý do hoặc quá 24 giờ, Then bị chặn; khi truy cập dữ liệu vận hành, Then có audit và mặc định chỉ đọc; When mở ảnh CCCD, Then luôn `403` dù support access còn hiệu lực. |
 | AC-RBAC-05 | Given Owner cấp `tenant.settings.write` hoặc `staff.manage` cho Staff, When lưu role, Then bị chặn và có audit từ chối. |
-| AC-SUS-01 | Given Owner bị `Suspended`, When tạo tin/Lease mới hoặc đổi giá, Then bị chặn; When phát hành hóa đơn, xác nhận thanh toán hoặc xử lý check-out cho Lease hiện hữu, Then thành công; Renter vẫn xem hợp đồng/hóa đơn và gửi minh chứng. |
+| AC-SUS-01 | Given Owner bị `Suspended`, When tạo tin/Lease mới, gia hạn Lease hoặc đổi giá, Then bị chặn; When phát hành hóa đơn, xác nhận thanh toán hoặc xử lý check-out cho Lease hiện hữu, Then thành công; Renter vẫn xem hợp đồng/hóa đơn và gửi minh chứng. |
 
 ### 13.2 Tin đăng và marketplace
 
@@ -978,10 +1155,14 @@ Một task chỉ `Done` khi:
 |---|---|
 | AC-LSE-01 | Given Room đã có Lease `Active`, When tạo Lease mới, Then bị từ chối ở cả domain và DB constraint. |
 | AC-LSE-02 | Given Owner đã ký, When Renter chưa ký, Then Lease chưa `Active`; sau khi Renter ký, Then `Active`, Room `Occupied`, tin đóng. |
-| AC-LSE-03 | Given Lease đã ký, When sửa nội dung, Then bị chặn; tạo phụ lục/phiên bản mới thành công. |
-| AC-LSE-04 | Given Lease kết thúc, When job archive chạy, Then CCCD không còn trong UI thường/Staff; Owner có quyền xem archive; mọi lần xem có audit. |
+| AC-LSE-03 | Given Lease đã ký, When sửa nội dung, Then bị chặn; When tạo phụ lục/phiên bản mới, Then thành công và có `LeaseRevision` tương ứng. |
+| AC-LSE-04 | Given Lease kết thúc, When job archive chạy, Then CCCD không còn trong UI thường/Staff; Owner có quyền xem archive; **Platform Admin luôn bị `403` kể cả support access**; mọi lần xem có audit. |
 | AC-LSE-05 | Given PDF hợp đồng đã tạo, When tải lại, Then hash khớp; nếu nội dung bị sửa, kiểm tra hash thất bại. |
 | AC-LSE-06 | Given Lease quá `endDate` nhưng chưa check-out/hóa đơn cuối, When job chạy, Then Lease vẫn `EndingSoon`, Room vẫn `Ending`; chỉ `Terminated` sau khi BR-19 hoàn tất. |
+| AC-LSE-07 | Given Admin công bố mẫu hệ thống version 2, When Owner tạo Lease dùng mẫu đó, Then `LeaseVersion` lưu đúng `templateId` + version 2; When Admin sửa mẫu lên version 3, Then Lease cũ không đổi nội dung. |
+| AC-LSE-08 | Given Lease `Active`/`EndingSoon`, When Owner gửi gia hạn và Renter xác nhận, Then cùng Lease đó có `endDate` mới, `startDate` gốc không đổi, không sinh Lease mới, `LeaseRevision`/`LeaseVersion` mới được ghi, Room vẫn `Occupied`. |
+| AC-LSE-09 | Given một Lease được tạo rồi sửa nháp, ký, gia hạn, When Owner mở lịch sử, Then thấy đủ revision theo thứ tự, mỗi revision có hash/actor/lý do/thời gian; When gọi API sửa/xóa revision, Then bị từ chối; Renter chỉ thấy revision của Lease mình. |
+| AC-LSE-10 | Given Platform Admin đang trong support access hợp lệ, When mở ảnh CCCD, Then `403`, không trả signed URL; Owner có `document.cccd.view` vẫn xem được và có audit. |
 
 ### 13.4 Biên bản
 
@@ -1001,12 +1182,14 @@ Một task chỉ `Done` khi:
 | AC-MTR-01 | Given chỉ số trước 100, When nhập 90, Then bị từ chối; khi bật `meterReplaced` + ghi chú + ảnh, Then chấp nhận và audit. |
 | AC-MTR-02 | Given Renter xác nhận chỉ số, When phát hành hóa đơn, Then hóa đơn sinh đúng dòng/đơn giá snapshot, tổng đúng. |
 | AC-MTR-03 | Given Renter không phản hồi 72 giờ, When Owner phát hành, Then hóa đơn có cờ `unconfirmedReading`, audit, Renter vẫn phản hồi được. |
-| AC-INV-01 | Given hóa đơn `Issued`, When Renter tải minh chứng, Then `PaymentSubmitted`; When Owner từ chối, Then về `Issued` kèm lý do. |
+| AC-INV-01 | Given hóa đơn `Issued`, When Renter tải minh chứng, Then `PaymentSubmitted`; When Owner từ chối, Then về `Issued` kèm lý do. Given hóa đơn `PendingRenterConfirmation`, When Renter tải minh chứng, Then bị chặn. |
 | AC-INV-02 | Given hóa đơn `PaymentSubmitted`, When người không có `payment.confirm` xác nhận, Then `403`; Owner xác nhận, Then `Paid` + audit. |
 | AC-INV-03 | Given hóa đơn `Paid`, When void, Then bị chặn; hóa đơn `Issued`/`Overdue` void được kèm lý do. |
 | AC-INV-04 | Given hóa đơn `Issued` quá hạn, When job chạy, Then chuyển `Overdue`; các mốc nhắc −3/0/+3/+7 ngày được gửi đúng lịch. |
 | AC-INV-05 | Given hóa đơn của Lease A, When Renter B mở, Then `404`; Renter A mở được. |
-| AC-INV-06 | Given hóa đơn `PaymentSubmitted` quá hạn, When job chạy, Then giữ `PaymentSubmitted` và gắn cờ trễ; Given hóa đơn `Issued` quá hạn, When job chạy, Then `Overdue`. |
+| AC-INV-06 | Given hóa đơn `PaymentSubmitted` quá hạn, When job chạy, Then giữ `PaymentSubmitted` và gắn cờ trễ; Given hóa đơn `Issued` quá hạn, When job chạy, Then `Overdue`; Given hóa đơn `PendingRenterConfirmation` quá hạn, Then không chuyển `Overdue`, chỉ gắn cờ trễ. |
+| AC-INV-07 | Given Owner phát hành hóa đơn, When Renter mở, Then thấy `PendingRenterConfirmation` và nút xác nhận; When Renter xác nhận, Then `Issued` + audit, và chỉ từ lúc đó mới gửi được minh chứng thanh toán. |
+| AC-INV-08 | Given hóa đơn `PendingRenterConfirmation` quá 72 giờ, When job chạy, Then chuyển `Issued` với cờ `unconfirmedInvoice` + audit; Given Renter phản hồi trước 72 giờ, When lưu, Then `Disputed` và Owner phải void/reissue trước khi thu tiền. |
 
 ### 13.6 Thông báo, ticket, audit
 
@@ -1020,6 +1203,7 @@ Một task chỉ `Done` khi:
 | AC-ADT-02 | Given audit đã ghi, When gọi API sửa/xóa, Then không tồn tại hoặc `405`; DB từ chối update/delete. |
 | AC-ADT-03 | Given xem CCCD hoặc xác nhận thanh toán, When audit được ghi, Then `before`/`after` không chứa số CCCD, ảnh, token; giá trị nhạy cảm được che. |
 | AC-ADT-04 | Given Owner/Staff/Renter/Admin xem/sửa/tải file/xuất PDF, When thao tác, Then audit ghi actor, tenant, action, entity, timestamp, kết quả; Owner lọc được activity log của chính mình và của Staff. |
+| AC-ADT-05 | Given Lease được tạo/sửa/ký/gia hạn/chấm dứt, When command hoàn tất, Then có một `LeaseRevision` tương ứng và một audit event tham chiếu `leaseRevisionId`; When Admin cố xem ảnh CCCD, Then `403` và audit ghi kết quả từ chối. |
 
 ### 13.7 Phi chức năng
 
@@ -1032,6 +1216,18 @@ Một task chỉ `Done` khi:
 | AC-REST-01 | Given backup trước sự cố, When restore vào môi trường sạch, Then dữ liệu mẫu khôi phục trong RTO ≤ 4 giờ. |
 | AC-ARCH-01 | Given một domain GET endpoint, When gọi, Then dữ liệu trả về từ MongoDB read model; architecture test không phát hiện query PostgreSQL trong query handler (trừ auth/permission/idempotency). |
 | AC-UX-01 | Given viewport 360 px và desktop 1280 px, When mở các luồng chính, Then không cuộn ngang và không mất chức năng; Web Push bị từ chối quyền thì inbox vẫn hoạt động. |
+
+### 13.8 Rate limit
+
+| ID | Given / When / Then |
+|---|---|
+| AC-RL-01 | Given IP gửi login lần thứ 6 trong 1 phút, When gọi login, Then `429` + `Retry-After`, body `rate_limited`; cùng thông điệp dù tài khoản tồn tại hay không; tài khoản sai 10 lần/15 phút vẫn bị khóa tạm. |
+| AC-RL-02 | Given user đã xác thực, When vượt 300 read/phút hoặc 60 write/phút, Then `429`; request bị chặn không chạy command/query, không ghi dữ liệu; user khác không bị ảnh hưởng. |
+| AC-RL-03 | Given Seeker gọi public search 61 lần/phút từ một IP, When gọi tiếp, Then `429`; health check/metrics nội bộ không bị rate limit. |
+| AC-RL-04 | Given hai API instance cùng dùng Redis, When gửi request luân phiên qua hai instance, Then tổng counter vẫn áp đúng ngưỡng; không có sticky session. |
+| AC-RL-05 | Given Redis ngừng hoạt động, When gọi login và public marketplace, Then login dùng local fallback và vẫn chặn burst; public read fail-open; metric/alert được ghi; không mất dữ liệu PostgreSQL/MongoDB. |
+| AC-RL-06 | Given request bị 429, When kiểm tra Redis key/audit, Then phần subject của key chỉ là hash (không email/phone/CCCD/token), TTL đúng policy, không có audit event cho từng 429; vượt ngưỡng lạm dụng mới có audit/cảnh báo. |
+| AC-RL-07 | Given client gửi `X-Forwarded-For` giả, When request vào, Then hệ thống dùng IP từ proxy tin cậy và không dùng header giả; endpoint mới thiếu policy bị CI chặn. |
 
 ---
 
@@ -1051,6 +1247,14 @@ Một task chỉ `Done` khi:
 | R-10 | Hợp đồng không có giá trị pháp lý | Trung bình | Cao | Ghi rõ mức xác nhận; tư vấn pháp lý trước pilot |
 | R-11 | Lưu CCCD quá lâu | Cao | Trung bình | Retention 24 tháng + job xóa + audit |
 | R-12 | Tranh chấp dữ liệu do sửa hóa đơn/biên bản | Cao | Trung bình | Immutable + version + audit + void/reissue |
+| R-13 | Mẫu hợp đồng hệ thống lỗi thời/không hợp pháp | Cao | Trung bình | Version hóa mẫu, review pháp lý trước publish, template snapshot trong Lease |
+| R-14 | Renter không xác nhận hóa đơn gây chậm thu tiền | Trung bình | Cao | Timeout 72 giờ + cờ `unconfirmedInvoice` + audit; nhắc trước hạn |
+| R-15 | Admin lộ CCCD qua support access | Rất cao | Thấp | Explicit deny ở endpoint, test âm tính bắt buộc, audit từ chối |
+| R-16 | Redis lỗi làm rate limit mất tác dụng hoặc sập auth | Cao | Trung bình | Local fallback auth + fail-open public read + alert; chaos test |
+| R-17 | Ngưỡng quá chặt chặn người dùng thật | Trung bình | Trung bình | Baseline theo route class, tune sau load test, 429 có `Retry-After`, theo dõi metric |
+| R-18 | Key rate limit chứa PII | Cao | Thấp | Hash subject, review key, TTL ngắn, không log raw key |
+| R-19 | Bypass rate limit do endpoint mới thiếu policy hoặc tin header IP giả | Cao | Trung bình | Policy registry + CI fail; proxy allowlist + test |
+| R-20 | Race condition counter khi scale ngang | Trung bình | Thấp | Redis atomic Lua/INCR, multi-instance test |
 
 ---
 
@@ -1060,9 +1264,9 @@ Một task chỉ `Done` khi:
 |---|---|---|---|---|
 | OD-01 | Tech stack backend/web/DB/hosting | **Đã chốt (D-14, mục 1.7)**: ASP.NET Core + DDD/CQRS, PostgreSQL write + MongoDB read, Hangfire, Next.js/Tailwind CSS/GSAP (một web app responsive) | Đã chốt 2026-11-23 | Toàn bộ kiến trúc |
 | OD-02 | Thời hạn lưu CCCD/hợp đồng/hóa đơn | Đề xuất ở mục 11 | Sprint 4 | Storage, compliance, job xóa |
-| OD-03 | Timeout xác nhận chỉ số 72 giờ | 72 giờ | Sprint 6 | Luồng hóa đơn |
+| OD-03 | Timeout xác nhận chỉ số 72 giờ | 72 giờ (áp dụng cả timeout xác nhận hóa đơn) | Sprint 6 | Luồng hóa đơn |
 | OD-04 | Owner tự kích hoạt hay Admin duyệt | Tự kích hoạt | Sprint 1 | Onboarding, kiểm soát |
-| OD-05 | Ai xem CCCD archive | Owner có quyền + Admin support access | Sprint 4 | Quyền riêng tư |
+| OD-05 | Ai xem CCCD archive | **Owner có quyền `document.cccd.view`; Platform Admin không bao giờ** | Đã chốt 2026-11-23 | Quyền riêng tư |
 | OD-06 | Staff có được cấp `payment.confirm` | Có, nhưng phải bật riêng | Sprint 6 | Kiểm soát tiền |
 | OD-07 | Ẩn địa chỉ chính xác mặc định | Bật ẩn | Sprint 3 | Marketplace, an toàn |
 | OD-08 | Cọc: chỉ ghi nhận hay có minh chứng | Chỉ ghi nhận | Sprint 4 | Nghiệp vụ cọc |
@@ -1072,6 +1276,11 @@ Một task chỉ `Done` khi:
 | OD-12 | Vùng lưu trữ dữ liệu | Chưa chọn | Sprint 0 | Compliance, chi phí |
 | OD-13 | Nhà cung cấp email giao dịch | Chưa chọn | Sprint 1 | Auth/invite |
 | OD-14 | Giới hạn ảnh/tin và dung lượng | 20 ảnh, 10 MB/ảnh | Sprint 3 | Chi phí, UX |
+| OD-15 | Ai được publish mẫu hệ thống và quy trình review pháp lý | Platform Admin có `platform.lease.template.manage`, review nội bộ trước publish | Sprint 4 | Nội dung hợp đồng, pháp lý |
+| OD-16 | Timeout Renter xác nhận hóa đơn | 72 giờ, tự `Issued` với cờ `unconfirmedInvoice` | Sprint 6 | Luồng thu tiền |
+| OD-17 | Giá trị baseline rate limit theo từng route | Bảng 4.10; tinh chỉnh sau load/abuse test ở S8 | Sprint 8 | UX, chống abuse |
+| OD-18 | Redis provider/HA và vùng đặt | Redis managed HA cùng vùng API; chốt ở Sprint 0 | Sprint 0 | Availability, chi phí |
+| OD-19 | Có UI admin chỉnh rate limit không | Không trong MVP; policy versioned theo environment | Sau MVP | Vận hành, phạm vi |
 
 ---
 
@@ -1084,7 +1293,7 @@ Một task chỉ `Done` khi:
 | NTF-03 | Hợp đồng mới/chờ ký | Renter đại diện | Push + inbox | Không |
 | NTF-04 | Hợp đồng sắp hết hạn (30 ngày) | Owner + Renter đại diện | Push + inbox | Không |
 | NTF-05 | Chỉ số mới chờ xác nhận | Renter đại diện | Push + inbox | Không |
-| NTF-06 | Hóa đơn mới | Renter đại diện | Push + inbox | Không |
+| NTF-06 | Hóa đơn đã xác nhận, sẵn sàng thanh toán (`Issued`) | Renter đại diện | Push + inbox | Không |
 | NTF-07 | Nhắc thanh toán/quá hạn | Renter đại diện | Push + inbox | Không |
 | NTF-08 | Thanh toán được xác nhận/từ chối | Renter đại diện | Push + inbox | Không |
 | NTF-09 | Ticket mới/cập nhật | Owner/Staff hoặc Renter đại diện | Push + inbox | Có |
@@ -1092,6 +1301,9 @@ Một task chỉ `Done` khi:
 | NTF-11 | Tài khoản bị khóa/mở khóa | Owner | Email + inbox | Không |
 | NTF-12 | Lời mời Staff/Renter | Người được mời | Email/link | Không |
 | NTF-13 | Biên bản check-in/check-out chờ xác nhận/nhắc lại | Renter đại diện | Push + inbox | Không |
+| NTF-14 | Hóa đơn mới chờ Renter xác nhận/nhắc xác nhận | Renter đại diện | Push + inbox | Không |
+| NTF-15 | Hóa đơn được Renter xác nhận/phản hồi | Owner, Staff có quyền | Push + inbox | Không |
+| NTF-16 | Hợp đồng được gia hạn hoặc đề xuất gia hạn chờ xác nhận | Owner + Renter đại diện | Push + inbox | Không |
 
 ---
 
@@ -1103,6 +1315,11 @@ Một task chỉ `Done` khi:
 - [ ] Mọi bảng/document tenant-scoped (PostgreSQL + MongoDB) có `TenantId` + chiến lược index.
 - [ ] Ràng buộc nghiệp vụ nằm ở write model; read model rebuild được và không phải nguồn sự thật.
 - [ ] Mọi quyền nhạy cảm có audit + cảnh báo.
+- [ ] Admin bị từ chối tuyệt đối ở ảnh CCCD, kể cả support access; có test âm tính.
+- [ ] Hợp đồng mẫu có version + snapshot; gia hạn không tạo Lease mới; mọi thay đổi Lease có `LeaseRevision`.
+- [ ] Hóa đơn có bước Renter xác nhận (hoặc timeout 72 giờ + cờ + audit).
+- [ ] Mọi endpoint có policy rate limit Redis; 429 + `Retry-After`; key băm không PII; Redis lỗi có fallback/alert.
+- [ ] Kiểm thử đa instance và spoof `X-Forwarded-For`; endpoint thiếu policy bị CI chặn.
 - [ ] Mọi thao tác của actor đã xác thực có audit; Owner xem được audit của mình + activity log Staff.
 - [ ] Mọi luồng có error/empty/retry state.
 - [ ] Không còn nội dung thanh toán online/billing/chat nhóm.
@@ -1117,13 +1334,14 @@ Một task chỉ `Done` khi:
 | Tài khoản, tenant, RBAC, session | FR-ACC-01..09 | AC-TEN-01, AC-TEN-02, AC-RBAC-01..05, AC-SEC-01, AC-SUS-01 |
 | Property, Room, bảng giá | FR-PRP-01..07 | AC-TEN-01, AC-TEN-02, AC-RBAC-02, AC-LST-03, AC-LSE-01 |
 | Tin đăng, marketplace, viewing request | FR-LST-01..13 | AC-LST-01..05, AC-UPL-01, AC-SEC-02 |
-| Hợp đồng, người ở, CCCD, ký | FR-LSE-01..14 | AC-LSE-01..06, AC-RBAC-01, AC-TEN-01, AC-SUS-01 |
+| Hợp đồng, người ở, CCCD, ký, mẫu, revision, gia hạn | FR-LSE-01..18 | AC-LSE-01..10, AC-RBAC-01, AC-TEN-01, AC-SUS-01, AC-ADT-05 |
 | Biên bản tình trạng | FR-CND-01..11 | AC-CND-01..06, AC-UPL-01 |
-| Chỉ số, hóa đơn, thanh toán | FR-MTR-01..16 | AC-MTR-01..03, AC-INV-01..06, AC-SUS-01 |
+| Chỉ số, hóa đơn, thanh toán | FR-MTR-01..17 | AC-MTR-01..03, AC-INV-01..08, AC-SUS-01 |
 | Thông báo | FR-NTF-01..08 | AC-NTF-01, AC-NTF-02, AC-SUS-01 |
 | Ticket | FR-TKT-01..08 | AC-TKT-01, AC-TKT-02, AC-RBAC-02 |
-| Audit | FR-ADT-01..07 | AC-ADT-01..04, AC-RBAC-04 |
-| NFR bảo mật/hiệu năng/độ tin cậy/web | NFR-SEC-*, NFR-PERF-*, NFR-AVL-*, NFR-WEB-*, NFR-UX-* | AC-PERF-01, AC-UPL-01, AC-SEC-01, AC-SEC-02, AC-REST-01, AC-TEN-02, AC-ARCH-01, AC-UX-01 |
+| Audit | FR-ADT-01..08 | AC-ADT-01..05, AC-LSE-09, AC-RBAC-04 |
+| Rate limit API | FR-RL-01..11 | AC-RL-01..07, AC-PERF-01, AC-SEC-01 |
+| NFR bảo mật/hiệu năng/độ tin cậy/web | NFR-SEC-*, NFR-PERF-*, NFR-AVL-*, NFR-WEB-*, NFR-UX-*, NFR-PRV-02, NFR-SCL-02, NFR-DAT-08 | AC-PERF-01, AC-UPL-01, AC-SEC-01, AC-SEC-02, AC-REST-01, AC-TEN-02, AC-ARCH-01, AC-UX-01, AC-LSE-10, AC-RL-01..07 |
 
 > FR đánh dấu `NÊN` có thể không có AC riêng trong MVP; khi đưa vào sprint phải bổ sung AC tương ứng.
 > AC không thay thế test tự động: mỗi AC `Must` phải có ít nhất một test tự động hoặc test thủ công được ghi lại trong PR.
