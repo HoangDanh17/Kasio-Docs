@@ -5,6 +5,26 @@ context: |
   All artifacts must be written in vi.
   Keep OpenSpec structural headings and SHALL/MUST keywords in English.
 
+  Source of truth: docs/business-requirements/BRD.md
+  Read BRD before proposing a change.
+
+  Non-negotiable:
+  - Every tenant-scoped endpoint has a cross-tenant negative test.
+  - Sensitive actions write an audit event.
+  - Every authenticated action is audited; Owner can view own and Staff activity log.
+  - All domain GET/query APIs read from MongoDB read model; commands write PostgreSQL.
+  - No online payment, billing, group chat, offline mode, or auto image comparison.
+  - One change = one observable capability.
+
+  Tech stack (BRD D-14, mục 1.7):
+  - Backend: C# ASP.NET Core, DDD + CQRS.
+  - Write DB: PostgreSQL (source of truth, business constraints).
+  - Read DB: MongoDB (projection only, rebuildable).
+  - Sync write→read: CAP (.NET) transactional outbox + event bus.
+  - Background jobs: Hangfire, idempotent.
+  - Web: Next.js + Tailwind CSS + GSAP.
+  - Mobile: React Native.
+
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
 # Example:
