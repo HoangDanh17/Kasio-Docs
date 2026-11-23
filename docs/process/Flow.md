@@ -2,11 +2,11 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Phiên bản | 1.4 |
+| Phiên bản | 1.5 |
 | Ngày | 2026-11-22 |
 | Áp dụng cho | Dự án `kasio` và các dự án dùng chung quy trình |
 | Tài liệu liên quan | `docs/business-requirements/BRD.md` (D-14, mục 1.7) |
-| Lịch sử | 1.0 (2026-11-21) quy trình baseline; 1.1 (2026-11-22) thêm tech stack; 1.2 (2026-11-22) CQRS GET từ MongoDB + audit Staff; 1.3 (2026-11-22) audit mọi actor đã xác thực, Owner xem audit của mình; 1.4 (2026-11-22) CAP outbox cho đồng bộ write→read |
+| Lịch sử | 1.0 (2026-11-21) quy trình baseline; 1.1 (2026-11-22) thêm tech stack; 1.2 (2026-11-22) CQRS GET từ MongoDB + audit Staff; 1.3 (2026-11-22) audit mọi actor đã xác thực, Owner xem audit của mình; 1.4 (2026-11-22) CAP outbox cho đồng bộ write→read; 1.5 (2026-11-22) thêm `openspec-review-change` cho luồng tự code |
 | Mục đích | Thống nhất cách chuyển yêu cầu nghiệp vụ thành change, code, review và archive |
 
 > **BRD là nguồn sự thật về sản phẩm. OpenSpec là nguồn sự thật về change đang làm và spec đã build.**
@@ -57,7 +57,7 @@ openspec list
 omp skill list --json | jq -r '.skills[] | select(.name|startswith("openspec")) | .name'
 ```
 
-Skill nằm ở `~/.agents/skills/`, dùng cho **mọi project** trên máy. Không commit thư mục skill global vào repo.
+Skill nằm ở `~/.agents/skills/`, dùng cho **mọi project** trên máy. Không commit thư mục skill global vào repo. Skill tự viết của team (ví dụ `openspec-review-change`) cũng đặt ở `~/.agents/skills/<name>/SKILL.md`.
 
 Cập nhật skill định kỳ:
 
@@ -158,7 +158,7 @@ Quy tắc:
 
 ---
 
-## 3. Sáu skill và thứ tự dùng
+## 3. Bảy skill và thứ tự dùng
 
 ### 3.1 Vai trò từng skill
 
@@ -167,14 +167,15 @@ Quy tắc:
 | 0 | `openspec-explore` | Suy nghĩ, so sánh phương án, làm rõ yêu cầu | Không | Không |
 | 1 | `openspec-propose` | Tạo change + `proposal.md`, `specs/`, `design.md`, `tasks.md` | Không | Có |
 | 2 | `openspec-update-change` | Sửa plan cho khớp nhau | Không | Khi cần |
-| 3 | `openspec-apply-change` | Implement từng task, tick `tasks.md` | Có | Có |
-| 4 | `openspec-sync-specs` | Merge delta spec vào main spec, không archive | Không | Khi cần |
-| 5 | `openspec-archive-change` | Đóng change, archive, merge spec | Không | Có |
+| 3 | `openspec-apply-change` | Implement từng task, tick `tasks.md` | Có | Không (thay được bằng tự code + `review-change`) |
+| 4 | `openspec-review-change` | Đối chiếu code tự viết với artifact, chạy check, tick task có bằng chứng; làm nốt task nhỏ hoặc viết test scenario | Có (mode `finish`/`tests`) | Khi tự code |
+| 5 | `openspec-sync-specs` | Merge delta spec vào main spec, không archive | Không | Khi cần |
+| 6 | `openspec-archive-change` | Đóng change, archive, merge spec | Không | Có |
 
-**Không gọi cả 6 skill tuần tự.** Happy path chỉ có:
+**Không gọi cả 7 skill tuần tự.** Happy path chỉ có:
 
 ```text
-explore? → propose → review → apply → archive
+explore? → propose → review plan → (apply | tự code → review-change) → archive
 ```
 
 `update-change` và `sync-specs` là nhánh xử lý, không phải bước bắt buộc.
@@ -191,9 +192,14 @@ flowchart LR
   R -- Cần sửa --> U[openspec-update-change]
   U --> R
   R -- Chốt --> A[openspec-apply-change]
+  R -- Tự code --> W[Code tay]
+  W --> V[openspec-review-change]
+  V -- Lệch plan --> U
   A -- Plan sai --> U
   A --> D{Tasks xong?}
+  V --> D
   D -- Chưa --> A
+  D -- "Chưa, tự code" --> W
   D -- Rồi --> S[openspec-sync-specs optional]
   S --> AR[openspec-archive-change]
   D -- Rồi --> AR
@@ -209,6 +215,9 @@ Trong omp, gõ `/skill:` rồi chọn skill, hoặc dùng trực tiếp:
 /skill:openspec-propose add-tenant-auth-foundation
 /skill:openspec-update-change add-tenant-auth-foundation
 /skill:openspec-apply-change add-tenant-auth-foundation
+/skill:openspec-review-change add-tenant-auth-foundation
+/skill:openspec-review-change add-tenant-auth-foundation tests
+/skill:openspec-review-change add-tenant-auth-foundation finish
 /skill:openspec-sync-specs add-tenant-auth-foundation
 /skill:openspec-archive-change add-tenant-auth-foundation
 ```
@@ -217,6 +226,57 @@ Agent khác có thể dùng `/openspec-propose`, hoặc mô tả bằng lời:
 
 ```text
 Dùng openspec-propose để tạo change add-tenant-auth-foundation.
+```
+
+### 3.4 Tự code rồi review (không dùng apply)
+
+`apply` là tùy chọn, không bắt buộc. Tự code là cách hợp lệ, miễn là trước khi
+archive có bước đối chiếu code với artifact. Skill `openspec-review-change` là
+skill **global** (`~/.agents/skills/openspec-review-change/SKILL.md`), dùng cho
+mọi repo trên máy và không commit vào repo. Máy mới chỉ cần copy thư mục skill
+vào `~/.agents/skills/`.
+
+| Mode | Ghi gì | Dùng khi |
+|---|---|---|
+| `review` (mặc định) | Chỉ tick `tasks.md` | Code xong phần chính, muốn biết đúng/thiếu gì |
+| `tests` | Thêm test + tick task test | Spec scenario chưa có test |
+| `finish` | Code + test + tick | Còn task nhỏ, rõ ràng, muốn làm nốt |
+
+Quy trình:
+
+1. Tự code. Không cần tick tay từng task.
+2. Chạy review:
+   `/skill:openspec-review-change add-tenant-auth-foundation`
+   Chỉ định task cụ thể: thêm số task sau mode, ví dụ
+   `/skill:openspec-review-change add-tenant-auth-foundation review 3,4`
+   hoặc `... finish 1.2-1.5`. Bỏ trống = toàn bộ `tasks.md`.
+3. Đọc báo cáo: task `done` được tick; `partial`/`missing`/`suspect` giữ
+   nguyên kèm lý do và file liên quan.
+4. Thiếu test scenario → mode `tests`. Còn task nhỏ → mode `finish`
+   (skill dừng trước task cần quyết định thiết kế/API/schema).
+5. Code đúng nhưng plan lệch → `openspec-update-change`; không sửa
+   `specs/`/`design.md` cho khớp code.
+6. Xong → `openspec-archive-change`.
+
+Quy tắc tick:
+
+- Chỉ tick khi **mọi vế** của task có trong code và check hẹp nhất đã pass
+  (build/test/runtime). Task behavioral chỉ đọc code thì tối đa `partial`.
+- Task đã `[x]` nhưng không có bằng chứng → báo `suspect`, không tự bỏ tick.
+- Gate cứng fail (tenant isolation, audit, CQRS, CAP outbox, banned scope) thì
+  task liên quan không được tick, kể cả khi code chạy được.
+- Skill không archive, không sync spec, không sửa
+  `proposal.md`/`specs/`/`design.md`/`config.yaml`.
+
+Ví dụ báo cáo rút gọn:
+
+```text
+## Review: add-tenant-auth-foundation — mode: review
+Plan: validate pass; tasks 6/12; ticked 3 this run
+
+### Gaps (not ticked)
+- task 7 — partial — thiếu cross-tenant test cho GET /staff
+- task 9 — missing — chưa có audit event khi Owner mời Staff
 ```
 
 ---
@@ -339,12 +399,17 @@ Quy tắc:
 - Gặp blocker: ghi rõ vào task/PR, không code tắt.
 - Không thêm feature ngoài `specs/`.
 
+Nếu tự code thay vì `apply`: bỏ qua bước này, code xong thì chạy
+`/skill:openspec-review-change <change>` (mục 3.4) để đối chiếu và tick task
+có bằng chứng trước khi mở PR.
+
 ### Bước 6 — Code review
 
 PR phải có:
 
 - Link tới change.
-- `tasks.md` đã tick các task đã xong.
+- `tasks.md` đã tick các task đã xong, mỗi tick có bằng chứng từ
+  `openspec-review-change` (nếu tự code) hoặc từ `apply`.
 - Test pass.
 - Test cross-tenant cho endpoint tenant-scoped.
 - Audit event cho thao tác nhạy cảm.
@@ -688,7 +753,7 @@ openspec/changes/add-tenant-auth-foundation
 |---|---|---|
 | Đầu sprint | Chọn 1–2 change từ BRD/epic; review `OD-*` | Danh sách change + owner |
 | Đầu sprint | Propose/review plan | Plan Approved |
-| Trong sprint | Apply theo `tasks.md`; WIP = 1 | Task tick + PR |
+| Trong sprint | Apply hoặc tự code theo `tasks.md`; WIP = 1 | Task tick + PR |
 | Giữa sprint | Kiểm tra scope; ý mới → backlog | Không đổi scope |
 | Cuối sprint | Demo E2E; review/merge; archive | Change Done |
 | Retro | Cập nhật Flow/BRD/OD; ghi blocker | Action item |
