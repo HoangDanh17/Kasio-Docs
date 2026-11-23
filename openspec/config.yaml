@@ -22,8 +22,9 @@ context: |
   - Read DB: MongoDB (projection only, rebuildable).
   - Sync write→read: CAP (.NET) transactional outbox + event bus.
   - Background jobs: Hangfire, idempotent.
-  - Web: Next.js + Tailwind CSS + GSAP.
-  - Mobile: React Native.
+  - Web: Next.js + Tailwind CSS + GSAP; một web app responsive cho mọi actor
+    (Owner/Staff/Renter/Seeker/Platform Admin), viewport 360 px → desktop;
+    không app native iOS/Android.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.

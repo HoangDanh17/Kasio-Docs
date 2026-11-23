@@ -1,15 +1,15 @@
 # Nền tảng SaaS Quản lý & Cho thuê Phòng trọ
-## Tài liệu Yêu cầu Nghiệp vụ (BRD) — v1.5
+## Tài liệu Yêu cầu Nghiệp vụ (BRD) — v1.6
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Phiên bản | **1.5** (baseline MVP + tech stack + audit toàn bộ actor + CAP outbox) |
-| Ngày phát hành | 2026-11-22 |
+| Phiên bản | **1.6** (baseline MVP + tech stack web responsive; bỏ mobile) |
+| Ngày phát hành | 2026-11-23 |
 | Trạng thái | Baseline duy nhất; đã chốt nghiệp vụ MVP và tech stack (D-14, mục 1.7) |
-| Lịch sử | 1.0 (2026-11-21) nghiệp vụ baseline; 1.1 (2026-11-22) chốt tech stack; 1.2 (2026-11-22) làm rõ bàn giao, kết thúc Lease, người ở, thanh toán, audit PII; 1.3 (2026-11-22) audit toàn bộ Staff, mọi GET đọc MongoDB, giải thích D-15/D-20; 1.4 (2026-11-22) audit mọi actor đã xác thực, Owner xem audit của mình; 1.5 (2026-11-22) CAP outbox cho đồng bộ write→read |
+| Lịch sử | 1.0 (2026-11-21) nghiệp vụ baseline; 1.1 (2026-11-22) chốt tech stack; 1.2 (2026-11-22) làm rõ bàn giao, kết thúc Lease, người ở, thanh toán, audit PII; 1.3 (2026-11-22) audit toàn bộ Staff, mọi GET đọc MongoDB, giải thích D-15/D-20; 1.4 (2026-11-22) audit mọi actor đã xác thực, Owner xem audit của mình; 1.5 (2026-11-22) CAP outbox cho đồng bộ write→read; 1.6 (2026-11-23) bỏ mobile, toàn bộ actor dùng một web app responsive |
 | Nguồn | Quyết định đã chốt trong tài liệu này; bản nháp v0.1 đã xóa khỏi repo (còn trong git history) |
 | Người sở hữu | Product Owner |
-| Đối tượng đọc | Product Owner, Backend/Frontend/Mobile Engineer, QA, người review kiến trúc |
+| Đối tượng đọc | Product Owner, Backend/Frontend Engineer, QA, người review kiến trúc |
 | Phạm vi tài liệu | Nghiệp vụ, quy tắc, trạng thái, NFR, tiêu chí chấp nhận, lộ trình cấp epic/sprint |
 | Ngoài phạm vi tài liệu | Thiết kế kỹ thuật chi tiết (API contract, ERD vật lý, hạ tầng, CI/CD) — tạo ở Sprint 0 |
 
@@ -37,7 +37,7 @@ Thị trường phòng trọ/nhà trọ nhỏ tại Việt Nam vận hành chủ
 - Chủ trọ ở xa khó thông báo đồng loạt, khó theo dõi điện nước, thanh toán.
 - Khách thuê không có nơi xem hợp đồng, hóa đơn, lịch sử thanh toán rõ ràng.
 
-Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, kèm **marketplace công khai** cho người tìm phòng, **hợp đồng điện tử mức xác nhận trong app**, **biên bản tình trạng phòng có ảnh**, **hóa đơn điện nước**, **thông báo đẩy** và **ticket báo sự cố**.
+Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, kèm **marketplace công khai** cho người tìm phòng, **hợp đồng điện tử mức xác nhận trên web**, **biên bản tình trạng phòng có ảnh**, **hóa đơn điện nước**, **thông báo đẩy** và **ticket báo sự cố**.
 
 ### 1.2 Mục tiêu
 
@@ -47,7 +47,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - **G2**: Tạo bằng chứng ảnh có thời gian cho tình trạng phòng và chỉ số điện/nước, giảm tranh chấp.
 - **G3**: Cung cấp một kênh chung để người tìm phòng tìm và liên hệ chủ trọ.
 - **G4**: Cho chủ trọ vận hành từ xa qua thông báo theo Property và phân quyền cho nhân viên.
-- **G5**: Một tài khoản, một app cho Owner, Staff và Renter; marketplace dùng được không cần đăng nhập.
+- **G5**: Một tài khoản, một web app responsive cho Owner, Staff và Renter; marketplace dùng được không cần đăng nhập.
 
 **Mục tiêu học tập (dự án cá nhân)**
 
@@ -58,7 +58,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | ID | Tiêu chí | Ngưỡng đo | Cách đo |
 |---|---|---|---|
 | SC-01 | Owner tự hoàn tất onboarding → Property → Room → tin đăng | ≤ 15 phút, không cần hỗ trợ | Usability test với 3–5 người |
-| SC-02 | Một vòng thuê end-to-end chạy được trên app | 100% bước, không dùng Excel/Zalo | UAT kịch bản E2E |
+| SC-02 | Một vòng thuê end-to-end chạy được trên web | 100% bước, không dùng Excel/Zalo | UAT kịch bản E2E |
 | SC-03 | Rò rỉ dữ liệu giữa hai tenant | 0 trường hợp | Bộ test cách ly tenant trong CI |
 | SC-04 | Sai trạng thái hóa đơn/thanh toán | 0 trường hợp | Test trạng thái + E2E |
 | SC-05 | Hiệu năng API | p95 đọc ≤ 300 ms, ghi ≤ 800 ms ở 200 người dùng đồng thời | Load test |
@@ -74,37 +74,36 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | Property, Room, bảng giá điện/nước/dịch vụ | Quản lý tài sản cố định, khấu hao |
 | Tin đăng, marketplace, tìm kiếm, yêu cầu xem phòng | Tin nổi bật, quảng cáo trả phí, SEO web công khai |
 | Duyệt tin, feedback từ chối, bản nháp sửa đổi | Workflow kiểm duyệt nhiều cấp |
-| Hợp đồng, người ở, CCCD, xác nhận trong app | Chữ ký số có giá trị pháp lý/chứng thực |
+| Hợp đồng, người ở, CCCD, xác nhận trên web | Chữ ký số có giá trị pháp lý/chứng thực |
 | Biên bản check-in/check-out có ảnh | So sánh ảnh tự động, AI phát hiện hư hỏng |
 | Nhập chỉ số điện/nước, Renter xác nhận ảnh | Đồng hồ thông minh, IoT |
 | Hóa đơn, minh chứng chuyển khoản, Owner xác nhận | Thanh toán online, ví điện tử, cổng ngân hàng, đối soát tự động |
 | Thông báo đẩy + inbox, thông báo theo Property | Chat nhóm, chat realtime, SMS/email marketing |
 | Ticket báo sự cố | Helpdesk đa cấp, SLA, chat trực tuyến |
 | Audit log, phân quyền Staff | Báo cáo doanh thu, dashboard nâng cao, đa ngôn ngữ |
-| App mobile một ứng dụng; web admin cho Platform Admin | App riêng cho Owner/Renter; desktop app |
+| Một web app responsive cho mọi actor; marketplace công khai không cần đăng nhập | App native iOS/Android; desktop app |
 
 ### 1.5 Ràng buộc và giả định
 
 **Ràng buộc**
 
 - Một người phát triển, làm song song với công việc khác; sprint 2 tuần.
-- Mobile-first; một app cho Owner/Staff/Renter; Platform Admin dùng web console.
+- Responsive web-first; một web app cho Owner/Staff/Renter/Seeker; Platform Admin dùng chung web app ở khu vực quản trị.
 - Thị trường Việt Nam: tiếng Việt, VND, múi giờ `Asia/Ho_Chi_Minh`.
 - **Không có nghiệp vụ tiền bạc giữa Owner và nền tảng**: không phí thành viên, không billing, không subscription, không hoàn phí.
-- **Không tích hợp thanh toán**: chuyển khoản ngoài app; hệ thống chỉ ghi nhận minh chứng và xác nhận.
+- **Không tích hợp thanh toán**: chuyển khoản ngoài hệ thống; hệ thống chỉ ghi nhận minh chứng và xác nhận.
 - Không có offline mode; chỉ chịu mạng yếu bằng retry/upload lại.
-- Push notification qua FCM; email chỉ dùng cho xác thực/khôi phục mật khẩu/lời mời.
+- Push notification qua Web Push (FCM) + inbox; email chỉ dùng cho xác thực/khôi phục mật khẩu/lời mời.
 - Backend: **C# / ASP.NET Core**, kiến trúc **DDD + CQRS**; **PostgreSQL** là write DB (nguồn sự thật); **MongoDB** là read DB (projection, rebuild được); đồng bộ write→read bằng **CAP (.NET) transactional outbox + event bus**; background job bằng **Hangfire**.
-- Web: **Next.js + Tailwind CSS + GSAP** (Platform Admin console).
-- Mobile: **React Native**, một app cho Owner/Staff/Renter/Seeker.
+- Web: **Next.js + Tailwind CSS + GSAP**; một web app responsive cho Owner/Staff/Renter/Seeker/Platform Admin.
 - Hạ tầng managed: PostgreSQL, MongoDB, object storage S3-compatible; worker Hangfire chạy tách khỏi API.
 
 **Giả định**
 
-- Owner và Renter có smartphone có internet; Renter chấp nhận dùng app/link để xác nhận.
-- Trường hợp Renter không dùng app được xử lý ngoài hệ thống trong MVP; không thiết kế luồng giấy tờ thay thế.
+- Owner và Renter có thiết bị dùng trình duyệt web có internet; Renter chấp nhận dùng web/link để xác nhận.
+- Trường hợp Renter không dùng web được xử lý ngoài hệ thống trong MVP; không thiết kế luồng giấy tờ thay thế.
 - Platform Admin có người trực để duyệt tin trong vòng 24 giờ.
-- Push có thể trễ/mất; inbox trong app là nguồn sự thật.
+- Push có thể trễ/mất; inbox trên web là nguồn sự thật.
 - Nội dung hợp đồng do Owner cung cấp; nền tảng không tư vấn pháp lý.
 
 ### 1.6 Quyết định đã chốt
@@ -114,17 +113,17 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | D-01 | Multi-tenant: một backend, schema chung trên PostgreSQL (write DB), tách bằng `TenantId`; MongoDB chỉ là read model rebuild được | Đơn giản vận hành, phù hợp dự án một người |
 | D-02 | Không có phí thành viên/billing giữa Owner và nền tảng | Theo câu trả lời mục 10.1; tránh xây nghiệp vụ tiền bạc ngoài phạm vi |
 | D-03 | Không tích hợp thanh toán online; chỉ ghi nhận minh chứng + Owner xác nhận | Theo câu trả lời mục 10.5, 10.6; giảm rủi ro pháp lý/kỹ thuật |
-| D-04 | Một mobile app cho Owner/Staff/Renter; Platform Admin dùng web console | Theo câu trả lời mục 10.8; giảm chi phí phát triển |
+| D-04 | Một web app responsive cho Owner/Staff/Renter/Seeker; Platform Admin dùng chung web app ở khu vực quản trị | Một codebase web; responsive thay app native, giảm chi phí phát triển |
 | D-05 | Một Staff chỉ thuộc một Owner; Renter một tài khoản dùng nhiều Owner | Theo câu trả lời mục 10.2; đơn giản hóa membership |
 | D-06 | Sửa tin đang hiển thị tạo revision chờ duyệt; bản cũ vẫn công khai | Theo câu trả lời mục 10.3; tránh nội dung chưa duyệt lên marketplace |
 | D-07 | CCCD là dữ liệu nhạy cảm; Owner cấp quyền cho Staff; archive khi kết thúc | Theo câu trả lời mục 10.4; giảm phơi bày dữ liệu |
-| D-08 | Ký hợp đồng ở mức xác nhận trong app, không phải chữ ký số pháp lý | Câu trả lời mục 10.5 không nêu mức ký; chọn mức đơn giản, ghi rõ giới hạn |
+| D-08 | Ký hợp đồng ở mức xác nhận trên web, không phải chữ ký số pháp lý | Câu trả lời mục 10.5 không nêu mức ký; chọn mức đơn giản, ghi rõ giới hạn |
 | D-09 | Có module Ticket cho Renter báo sự cố | Theo câu trả lời mục 10.7 |
 | D-10 | Renter xác nhận ảnh chỉ số điện/nước trước khi phát hành hóa đơn (hoặc quá 72 giờ theo BR-21) | Theo câu trả lời mục 10.5 |
 | D-11 | Không so sánh ảnh tự động, không màn hình so sánh trực tiếp | Giữ đúng phạm vi MVP; giảm phức tạp |
 | D-12 | Không chat nhóm/chat realtime; chỉ push một chiều + ticket | Giữ đúng phạm vi MVP |
 | D-13 | Marketplace chỉ phục vụ bản tin đã duyệt hiện hành | Chống rò rỉ nội dung chưa duyệt |
-| D-14 | Tech stack: ASP.NET Core (C#) + DDD/CQRS; PostgreSQL write DB, MongoDB read DB, CAP (.NET) transactional outbox cho đồng bộ write→read, Hangfire cho background job; Next.js + Tailwind CSS + GSAP cho web; React Native cho mobile | Một người làm cần stack quen thuộc, tách read/write để đọc nhanh; CAP giữ outbox cùng transaction PostgreSQL; trade-off CQRS/eventual consistency được ghi rõ ở mục 1.7 |
+| D-14 | Tech stack: ASP.NET Core (C#) + DDD/CQRS; PostgreSQL write DB, MongoDB read DB, CAP (.NET) transactional outbox cho đồng bộ write→read, Hangfire cho background job; Next.js + Tailwind CSS + GSAP cho một web app responsive dùng cho mọi actor | Một người làm cần stack quen thuộc, tách read/write để đọc nhanh; CAP giữ outbox cùng transaction PostgreSQL; trade-off CQRS/eventual consistency được ghi rõ ở mục 1.7 |
 | D-15 | Check-in lập sau khi Lease `Active`, trước khi bàn giao; biên bản `PendingRenter` không chặn Lease nhưng phải nhắc Renter hàng ngày | Tách ký hợp đồng khỏi biên bản, vẫn giữ bằng chứng trước khi giao phòng |
 | D-16 | Chỉ Renter đại diện có tài khoản; người ở cùng là hồ sơ dữ liệu, không đăng nhập trong MVP | Khớp mô hình `Lease.representativeUserId`; tránh mở rộng quyền truy cập ngoài phạm vi |
 | D-17 | Hóa đơn `PaymentSubmitted` không bị job chuyển `Overdue`; chỉ `Issued` mới chuyển; hóa đơn chờ xác nhận quá hạn hiển thị cờ trễ | Tránh trạng thái "quá hạn" sai khi Renter đã gửi minh chứng |
@@ -148,10 +147,9 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | Read DB | MongoDB | Projection/read model: **mọi domain GET/query** (marketplace, danh sách, chi tiết, activity log) |
 | Sync write→read | CAP (.NET) | Transactional outbox + event bus; publish sau khi transaction PostgreSQL commit; at-least-once, consumer idempotent; transport chốt ở Sprint 0 |
 | Background job | Hangfire (storage PostgreSQL) | Nhắc hạn, chuyển `Overdue`, `EndingSoon`, archive CCCD, retry push, rebuild projection |
-| Web | Next.js + Tailwind CSS + GSAP | Platform Admin console; animation/transition bằng GSAP |
-| Mobile | React Native | Một app cho Owner/Staff/Renter/Seeker |
+| Web | Next.js + Tailwind CSS + GSAP | Một web app responsive cho Owner/Staff/Renter/Seeker/Platform Admin; animation/transition bằng GSAP |
 | Object storage | S3-compatible, bucket private | Ảnh tin, CCCD, biên bản, minh chứng |
-| Push | FCM | Push notification |
+| Push | Web Push (FCM) | Push notification trên web; inbox là nguồn sự thật |
 
 **Ràng buộc kiến trúc**
 
@@ -167,7 +165,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - Tiền lưu số nguyên 64-bit (đồng) ở cả hai phía; không dùng `double`/floating point (BR-25).
 - Hangfire worker chạy tách khỏi API, scale ngang dùng distributed lock; job phải idempotent và retry an toàn (BR-39).
 - MongoDB không dùng làm write DB cho bất kỳ aggregate nào trong MVP.
-- Platform Admin console là web duy nhất trong MVP; marketplace công khai trên web vẫn ngoài phạm vi (OD-10).
+- Toàn bộ MVP chạy trên một web app responsive; marketplace công khai là route không cần đăng nhập, nhưng SEO/quảng cáo vẫn ngoài phạm vi (OD-10).
 
 ---
 
@@ -204,11 +202,11 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 
 | Actor | Kênh | Trách nhiệm chính |
 |---|---|---|
-| **Platform Admin** | Web admin console | Quản lý Owner, khóa/mở khóa, duyệt tin, bật miễn duyệt, xử lý báo cáo, thống kê nền tảng |
-| **Owner** | Mobile app | Quản lý Property/Room/giá, đăng tin, hợp đồng, biên bản, điện nước, hóa đơn, nhân viên, thông báo |
-| **Staff** | Mobile app | Làm việc trong tenant của một Owner theo role + phạm vi Property được giao |
-| **Renter** | Mobile app | Xem/ký hợp đồng, xác nhận biên bản & chỉ số, xem hóa đơn, gửi minh chứng, tạo ticket |
-| **Seeker** | Mobile app (không đăng nhập) | Tìm tin, xem chi tiết, gửi yêu cầu xem phòng |
+| **Platform Admin** | Web (responsive) | Quản lý Owner, khóa/mở khóa, duyệt tin, bật miễn duyệt, xử lý báo cáo, thống kê nền tảng |
+| **Owner** | Web (responsive) | Quản lý Property/Room/giá, đăng tin, hợp đồng, biên bản, điện nước, hóa đơn, nhân viên, thông báo |
+| **Staff** | Web (responsive) | Làm việc trong tenant của một Owner theo role + phạm vi Property được giao |
+| **Renter** | Web (responsive) | Xem/ký hợp đồng, xác nhận biên bản & chỉ số, xem hóa đơn, gửi minh chứng, tạo ticket |
+| **Seeker** | Web công khai (không đăng nhập) | Tìm tin, xem chi tiết, gửi yêu cầu xem phòng |
 
 ### 3.2 Mô hình danh tính
 
@@ -290,7 +288,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - **FR-LST-05**: Sửa tin đang `Published` không làm thay đổi bản công khai ngay; hệ thống tạo **Listing Revision** ở trạng thái chờ duyệt. Bản đã duyệt tiếp tục hiển thị đến khi revision được duyệt.
 - **FR-LST-06**: Mỗi tin chỉ có tối đa một revision đang chờ; Owner có thể hủy revision để sửa lại từ đầu.
 - **FR-LST-07**: Tin tự đóng khi Room không còn `Vacant` (đã giữ chỗ/đang thuê/sửa chữa) hoặc khi Owner đóng thủ công.
-- **FR-LST-08**: Marketplace công khai trong app: lọc theo tỉnh/thành, quận/huyện, khoảng giá, diện tích, tiện nghi, ngày vào ở; sắp xếp mới nhất/giá; phân trang.
+- **FR-LST-08**: Marketplace công khai trên web: lọc theo tỉnh/thành, quận/huyện, khoảng giá, diện tích, tiện nghi, ngày vào ở; sắp xếp mới nhất/giá; phân trang.
 - **FR-LST-09**: Seeker gửi yêu cầu xem phòng (tên, số điện thoại, lời nhắn, thời gian mong muốn); Owner nhận thông báo và quản lý trạng thái `New → Contacted → Scheduled → Completed/Closed/Cancelled`.
 - **FR-LST-10**: Marketplace chỉ trả về **bản đã duyệt hiện hành** của tin `Published`; không trả draft, pending, rejected, hay dữ liệu tenant khác. Dữ liệu đọc từ read model MongoDB; độ trễ tối đa theo NFR-DAT-05.
 - **FR-LST-11**: Không có tin nổi bật/quảng cáo trả phí; mọi tin được xử lý như nhau.
@@ -310,7 +308,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 - **FR-LSE-09**: Job hàng ngày đánh dấu `EndingSoon` trước ngày hết hạn 30 ngày; gửi thông báo cho Owner và Renter.
 - **FR-LSE-10**: Một Room chỉ có tối đa một Lease `Active` tại một thời điểm.
 - **FR-LSE-11**: Renter xem tất cả Lease của mình trên nhiều Owner trong cùng một tài khoản.
-- **FR-LSE-12**: Ký điện tử ở mức **xác nhận trong app**, không phải chữ ký số có giá trị pháp lý; ghi rõ điều này trong hợp đồng và màn hình xác nhận.
+- **FR-LSE-12**: Ký điện tử ở mức **xác nhận trên web**, không phải chữ ký số có giá trị pháp lý; ghi rõ điều này trong hợp đồng và màn hình xác nhận.
 - **FR-LSE-13**: Khi Lease kết thúc, ảnh CCCD chuyển sang trạng thái lưu trữ, ẩn khỏi giao diện thường và khỏi Staff; Renter đại diện vẫn xem được ảnh CCCD của chính mình; Owner có quyền nhạy cảm và Platform Admin qua support access xem được ảnh archive, có audit.
 - **FR-LSE-14**: Staff chỉ thấy Lease thuộc Property được giao và chỉ thao tác trong phạm vi quyền.
 
@@ -349,7 +347,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 
 ### 4.7 Thông báo và liên lạc
 
-- **FR-NTF-01**: Kênh: push notification (FCM) + inbox trong app. Email chỉ cho xác thực/khôi phục mật khẩu/lời mời.
+- **FR-NTF-01**: Kênh: Web Push (FCM) + inbox trên web. Email chỉ cho xác thực/khôi phục mật khẩu/lời mời.
 - **FR-NTF-02**: Sự kiện: hợp đồng mới, hợp đồng sắp hết hạn, hóa đơn mới, nhắc thanh toán, thanh toán được xác nhận/từ chối, chỉ số mới, biên bản mới, ticket cập nhật, thông báo chung.
 - **FR-NTF-03**: Owner/Staff có quyền gửi thông báo theo Property; xem trước nội dung; gửi một lần đến tất cả Renter đại diện đang có Lease `Active` trong Property; có audit.
 - **FR-NTF-04**: Mỗi thông báo có deep link tới entity liên quan; khi mở phải kiểm tra lại quyền.
@@ -418,7 +416,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 2. Renter nhận thông báo, xem ảnh, xác nhận hoặc phản hồi.
 3. Chỉ số `Confirmed` (hoặc quá 72 giờ, Owner phát hành với cờ `unconfirmedReading`).
 4. Hệ thống tạo hóa đơn từ đơn giá đã snapshot; gửi thông báo.
-5. Renter chuyển khoản ngoài app → tải minh chứng lên hóa đơn.
+5. Renter chuyển khoản ngoài hệ thống → tải minh chứng lên hóa đơn.
 6. Hóa đơn `PaymentSubmitted`; Owner kiểm tra và xác nhận → `Paid` (hoặc từ chối kèm lý do → trạng thái trước khi gửi minh chứng: `Issued`/`Overdue`).
 7. Quá hạn: job chỉ chuyển `Issued` → `Overdue`; `PaymentSubmitted` giữ nguyên và gắn cờ trễ; gửi nhắc.
 
@@ -538,7 +536,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | Trạng thái | Ý nghĩa | Chuyển tiếp hợp lệ |
 |---|---|---|
 | `Vacant` | Trống, có thể đăng tin/tạo Lease | `Reserved`, `Maintenance` |
-| `Reserved` | Đã giữ chỗ/đặt cọc ngoài app | `Vacant` (hủy), `Occupied` |
+| `Reserved` | Đã giữ chỗ/đặt cọc ngoài hệ thống | `Vacant` (hủy), `Occupied` |
 | `Occupied` | Đang có Lease `Active` | `Ending` |
 | `Ending` | Đang làm thủ tục trả phòng | `Vacant` |
 | `Maintenance` | Sửa chữa/ngưng cho thuê | `Vacant` |
@@ -675,15 +673,15 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | NFR-OBS-03 | Audit tách khỏi application log; không phụ thuộc log retention. | Architecture review |
 | NFR-OBS-04 | Audit mọi thao tác của actor đã xác thực ghi bất đồng bộ qua CAP outbox, không chặn response; activity log đọc từ read model; retention theo mục 11. | Load test + architecture review |
 
-### 8.4 Mobile và mạng yếu
+### 8.4 Web responsive và mạng yếu
 
 | ID | Yêu cầu | Kiểm chứng |
 |---|---|---|
-| NFR-MOB-01 | Hỗ trợ Android 9+ và iOS 15+; một app, điều hướng theo vai trò. | Thiết bị test |
-| NFR-MOB-02 | Ảnh nén client (cạnh dài ≤ 1920 px, chất lượng ~85%); upload có progress, retry, resume/chunk khi có thể. | Manual test |
-| NFR-MOB-03 | Không offline mode; cho phép cache đọc tạm nhưng không ghi offline. | Scope review |
-| NFR-MOB-04 | Chụp ảnh trong app hoặc chọn từ thư viện; xử lý từ chối quyền camera/thư viện. | Manual test |
-| NFR-MOB-05 | Push qua FCM; nếu người dùng từ chối quyền, inbox vẫn hoạt động. | Manual test |
+| NFR-WEB-01 | Một web app responsive cho mọi actor; hỗ trợ Chrome/Edge/Safari/Firefox 2 phiên bản gần nhất, viewport 360 px → 1920 px, không cuộn ngang ở 360 px. | Browser matrix + UI review |
+| NFR-WEB-02 | Ảnh nén client (cạnh dài ≤ 1920 px, chất lượng ~85%); upload có progress, retry, resume/chunk khi có thể. | Manual test |
+| NFR-WEB-03 | Không offline mode; cho phép cache đọc tạm nhưng không ghi offline; không yêu cầu service worker cache toàn app. | Scope review |
+| NFR-WEB-04 | Chọn ảnh từ thiết bị qua `<input type=file>` (kèm `capture` trên mobile browser); xử lý từ chối quyền camera/thư viện. | Manual test |
+| NFR-WEB-05 | Web Push qua FCM (service worker); nếu người dùng từ chối quyền, inbox vẫn hoạt động. | Manual test |
 
 ### 8.5 Dữ liệu, ngôn ngữ, UX
 
@@ -696,7 +694,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | NFR-DAT-05 | Read model MongoDB là projection rebuild được từ PostgreSQL; lag p95 ≤ 2 giây; rebuild toàn bộ ≤ 60 phút với dữ liệu mục tiêu NFR-SCL-01. | Metric + rebuild drill |
 | NFR-DAT-06 | Tiền lưu số nguyên 64-bit (đồng) ở write DB và read model; không dùng `double`. | Code review + test |
 | NFR-DAT-07 | 100% domain GET/query API đọc MongoDB read model; query handler không query PostgreSQL (trừ auth/session, permission, idempotency); architecture test trong CI. | Architecture test |
-| NFR-UX-01 | Tiếng Việt, mobile-first; luồng chính hoàn tất được bằng một tay ở màn hình 360 px. | UI review |
+| NFR-UX-01 | Tiếng Việt, responsive-first; luồng chính hoàn tất được trên viewport 360 px (mobile browser) và desktop 1280 px. | UI review |
 | NFR-UX-02 | Touch target ≥ 44 px; label rõ; hỗ trợ screen reader cho luồng chính; tương phản đạt WCAG AA. | Accessibility check |
 | NFR-UX-03 | Lỗi hiển thị hành động khắc phục; không lộ stack trace. | Manual test |
 | NFR-COMP-01 | Không cung cấp dịch vụ thanh toán/tài chính; không lưu thông tin thẻ/tài khoản ngân hàng. | Scope review |
@@ -728,7 +726,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | `LeaseVersion` | Tenant | leaseId, versionNo, contentHash, snapshot | Bất biến |
 | `Occupant` | Tenant | leaseId, fullName, dob, idNumber, phone, role | Người đại diện + ở cùng; chỉ hồ sơ, không có tài khoản (D-16) |
 | `OccupantDocument` | Tenant | occupantId, type, objectKey, status | CCCD, nhạy cảm |
-| `LeaseSignature` | Tenant | leaseVersionId, userId, role, signedAt, ip, device, hash | Xác nhận trong app |
+| `LeaseSignature` | Tenant | leaseVersionId, userId, role, signedAt, ip, device, hash | Xác nhận trên web |
 | `ConditionReport` | Tenant | leaseId, type (in/out), status, lockedAt, unconfirmedCheckout | Cờ khi lock check-out sau timeout |
 | `ConditionArea` | Tenant | reportId, name, note, condition | |
 | `ConditionPhoto` | Tenant | areaId, objectKey, capturedAt, uploadedBy | Immutable sau khóa |
@@ -739,7 +737,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | `Ticket` | Tenant | roomId, createdBy, category, title, description, priority, status | |
 | `TicketMessage` | Tenant | ticketId, authorId, body, isInternal | Internal note |
 | `Notification` | Toàn nền tảng/tenant | recipientId, type, entityType, entityId, title, body, readAt | Inbox |
-| `DeviceToken` | Toàn nền tảng | userId, platform, token | FCM |
+| `DeviceToken` | Toàn nền tảng | userId, platform, token | Web Push subscription |
 | `AuditEvent` | Toàn nền tảng/tenant | actor, tenantId, action, entity, before/after, ip, requestId, reason | Append-only; before/after đã che PII (D-18) |
 | `FileObject` | Toàn nền tảng/tenant | tenantId, key, contentType, size, checksum, owner | Private bucket |
 | `IdempotencyKey` | Toàn nền tảng | key, userId, endpoint, responseHash, expiresAt | Chống trùng |
@@ -876,8 +874,8 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 | Meter + invoice + payment proof/confirm | | Thanh toán online/ví |
 | Push + inbox + Property broadcast | | Billing/phí nền tảng |
 | Ticket | | Offline mode |
-| Admin console (owner, moderation) | | Public web marketplace/SEO |
-| Audit viewer | | Mobile app riêng Owner/Renter |
+| Admin console (owner, moderation) | | SEO/quảng cáo trả phí cho marketplace công khai |
+| Audit viewer | | App native iOS/Android |
 
 ### 12.2 Epic
 
@@ -899,7 +897,7 @@ Nền tảng giải quyết bằng một **SaaS multi-tenant** cho chủ trọ, 
 |---|---|---|---|---|
 | **S0** | 1 tuần | Dựng nền tảng theo stack đã chốt | ADR chi tiết (layering DDD, command/query, CAP outbox/projection, Hangfire), repo, CI, dev/staging, PostgreSQL + MongoDB, storage, push spike, tenant-isolation test harness | Deploy "hello" + CI xanh + ADR được duyệt |
 | **S1** | 2 tuần | E1 | Auth, tenant auto, Staff invite, role/permission, audit, session | Owner đăng ký/đăng nhập; Staff chỉ một Owner; test cross-tenant pass |
-| **S2** | 2 tuần | E2 | Property/Room/Tariff, trạng thái phòng, app shell | CRUD đầy đủ; Room state machine; test quyền |
+| **S2** | 2 tuần | E2 | Property/Room/Tariff, trạng thái phòng, web app shell responsive | CRUD đầy đủ; Room state machine; test quyền |
 | **S3** | 2 tuần | E3 | Listing, upload ảnh, moderation, revision, marketplace search, viewing request | Seeker tìm thấy tin đã duyệt; sửa tin không đổi bản công khai; admin duyệt/từ chối |
 | **S4** | 2 tuần | E4 | Lease, invite, occupants, CCCD, sign, PDF, archive | Hai bên ký → Active; PDF hash khớp; CCCD archive khi kết thúc |
 | **S5** | 2 tuần | E5 | Check-in/out, ảnh theo khu vực, xác nhận/khóa, khấu trừ, hoàn cọc | Biên bản khóa bất biến; ảnh có timestamp; PDF xuất được |
@@ -933,6 +931,7 @@ Một task chỉ `Done` khi:
 - [ ] Audit event được ghi cho mọi thao tác của actor đã xác thực và thao tác nhạy cảm.
 - [ ] API trả lỗi đúng mã, không lộ stack trace/PII.
 - [ ] UI xử lý loading/empty/error/retry.
+- [ ] UI responsive: không cuộn ngang ở 360 px, dùng được ở desktop 1280 px.
 - [ ] Tài liệu/ADR cập nhật nếu thay đổi quyết định.
 - [ ] Demo được trên staging.
 
@@ -1014,7 +1013,7 @@ Một task chỉ `Done` khi:
 | ID | Given / When / Then |
 |---|---|
 | AC-NTF-01 | Given Property có 3 Renter đại diện active và 1 Renter đại diện đã kết thúc, When broadcast, Then chỉ 3 người active nhận; có audit. |
-| AC-NTF-02 | Given push thất bại, When mở app, Then thông báo vẫn có trong inbox. |
+| AC-NTF-02 | Given push thất bại, When mở web, Then thông báo vẫn có trong inbox. |
 | AC-TKT-01 | Given Renter tạo ticket cho Room đang thuê, When Owner mở, Then thấy ticket; Renter khác không thấy. |
 | AC-TKT-02 | Given ticket `Resolved`, When Renter mở lại trong 7 ngày, Then `Open`; quá 7 ngày, Then bị chặn. |
 | AC-ADT-01 | Given xem CCCD/xác nhận thanh toán/đổi quyền, When thao tác, Then có audit với actor, tenant, entity, timestamp, IP/requestId. |
@@ -1032,6 +1031,7 @@ Một task chỉ `Done` khi:
 | AC-SEC-02 | Given file `.svg`/HTML đổi đuôi `.jpg`, When upload, Then bị từ chối do magic bytes. |
 | AC-REST-01 | Given backup trước sự cố, When restore vào môi trường sạch, Then dữ liệu mẫu khôi phục trong RTO ≤ 4 giờ. |
 | AC-ARCH-01 | Given một domain GET endpoint, When gọi, Then dữ liệu trả về từ MongoDB read model; architecture test không phát hiện query PostgreSQL trong query handler (trừ auth/permission/idempotency). |
+| AC-UX-01 | Given viewport 360 px và desktop 1280 px, When mở các luồng chính, Then không cuộn ngang và không mất chức năng; Web Push bị từ chối quyền thì inbox vẫn hoạt động. |
 
 ---
 
@@ -1043,7 +1043,7 @@ Một task chỉ `Done` khi:
 | R-02 | Lộ CCCD/ảnh biên lai | Rất cao | Trung bình | Quyền nhạy cảm, signed URL ngắn, audit, không log PII |
 | R-03 | Scope creep sang thanh toán/chat | Cao | Cao | Ghi rõ ngoài phạm vi; mọi yêu cầu mới phải thành change riêng |
 | R-04 | Một người làm quá tải | Cao | Cao | Sprint 2 tuần, task ≤ 1 ngày, buffer 20%, cắt `Should` trước |
-| R-05 | Renter không chịu dùng app | Cao | Trung bình | Giả định MVP; khảo sát pilot; fallback giấy xử lý ngoài hệ thống |
+| R-05 | Renter không chịu dùng web | Cao | Trung bình | Giả định MVP; khảo sát pilot; fallback giấy xử lý ngoài hệ thống |
 | R-06 | Renter không xác nhận chỉ số | Trung bình | Cao | Timeout 72 giờ + cờ `unconfirmedReading` + audit |
 | R-07 | Duyệt tin chậm | Trung bình | Trung bình | Hàng đợi + SLA 24h + cờ miễn duyệt cho Owner tin cậy |
 | R-08 | Push không đến | Trung bình | Cao | Inbox là nguồn sự thật; retry; hiển thị trạng thái |
@@ -1058,7 +1058,7 @@ Một task chỉ `Done` khi:
 
 | ID | Quyết định | Mặc định trong BRD | Cần chốt trước | Ảnh hưởng |
 |---|---|---|---|---|
-| OD-01 | Tech stack backend/mobile/DB/hosting | **Đã chốt (D-14, mục 1.7)**: ASP.NET Core + DDD/CQRS, PostgreSQL write + MongoDB read, Hangfire, Next.js/Tailwind CSS/GSAP, React Native | Đã chốt 2026-11-22 | Toàn bộ kiến trúc |
+| OD-01 | Tech stack backend/web/DB/hosting | **Đã chốt (D-14, mục 1.7)**: ASP.NET Core + DDD/CQRS, PostgreSQL write + MongoDB read, Hangfire, Next.js/Tailwind CSS/GSAP (một web app responsive) | Đã chốt 2026-11-23 | Toàn bộ kiến trúc |
 | OD-02 | Thời hạn lưu CCCD/hợp đồng/hóa đơn | Đề xuất ở mục 11 | Sprint 4 | Storage, compliance, job xóa |
 | OD-03 | Timeout xác nhận chỉ số 72 giờ | 72 giờ | Sprint 6 | Luồng hóa đơn |
 | OD-04 | Owner tự kích hoạt hay Admin duyệt | Tự kích hoạt | Sprint 1 | Onboarding, kiểm soát |
@@ -1123,7 +1123,7 @@ Một task chỉ `Done` khi:
 | Thông báo | FR-NTF-01..08 | AC-NTF-01, AC-NTF-02, AC-SUS-01 |
 | Ticket | FR-TKT-01..08 | AC-TKT-01, AC-TKT-02, AC-RBAC-02 |
 | Audit | FR-ADT-01..07 | AC-ADT-01..04, AC-RBAC-04 |
-| NFR bảo mật/hiệu năng/độ tin cậy | NFR-SEC-*, NFR-PERF-*, NFR-AVL-*, NFR-MOB-* | AC-PERF-01, AC-UPL-01, AC-SEC-01, AC-SEC-02, AC-REST-01, AC-TEN-02, AC-ARCH-01 |
+| NFR bảo mật/hiệu năng/độ tin cậy/web | NFR-SEC-*, NFR-PERF-*, NFR-AVL-*, NFR-WEB-*, NFR-UX-* | AC-PERF-01, AC-UPL-01, AC-SEC-01, AC-SEC-02, AC-REST-01, AC-TEN-02, AC-ARCH-01, AC-UX-01 |
 
 > FR đánh dấu `NÊN` có thể không có AC riêng trong MVP; khi đưa vào sprint phải bổ sung AC tương ứng.
 > AC không thay thế test tự động: mỗi AC `Must` phải có ít nhất một test tự động hoặc test thủ công được ghi lại trong PR.

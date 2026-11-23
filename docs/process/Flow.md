@@ -2,11 +2,11 @@
 
 | Thuộc tính | Giá trị |
 |---|---|
-| Phiên bản | 1.5 |
-| Ngày | 2026-11-22 |
+| Phiên bản | 1.6 |
+| Ngày | 2026-11-23 |
 | Áp dụng cho | Dự án `kasio` và các dự án dùng chung quy trình |
 | Tài liệu liên quan | `docs/business-requirements/BRD.md` (D-14, mục 1.7) |
-| Lịch sử | 1.0 (2026-11-21) quy trình baseline; 1.1 (2026-11-22) thêm tech stack; 1.2 (2026-11-22) CQRS GET từ MongoDB + audit Staff; 1.3 (2026-11-22) audit mọi actor đã xác thực, Owner xem audit của mình; 1.4 (2026-11-22) CAP outbox cho đồng bộ write→read; 1.5 (2026-11-22) thêm `openspec-review-change` cho luồng tự code |
+| Lịch sử | 1.0 (2026-11-21) quy trình baseline; 1.1 (2026-11-22) thêm tech stack; 1.2 (2026-11-22) CQRS GET từ MongoDB + audit Staff; 1.3 (2026-11-22) audit mọi actor đã xác thực, Owner xem audit của mình; 1.4 (2026-11-22) CAP outbox cho đồng bộ write→read; 1.5 (2026-11-22) thêm `openspec-review-change` cho luồng tự code; 1.6 (2026-11-23) web responsive only (bỏ mobile); luồng 2 repo docs↔code, review cross-repo, change scaffolding |
 | Mục đích | Thống nhất cách chuyển yêu cầu nghiệp vụ thành change, code, review và archive |
 
 > **BRD là nguồn sự thật về sản phẩm. OpenSpec là nguồn sự thật về change đang làm và spec đã build.**
@@ -23,6 +23,7 @@
 5. **Tenant isolation, authorization và audit là gate cứng.** Thiếu test tương ứng thì không merge.
 6. **Không mở scope trong lúc apply.** Ý mới → tạo change mới, không nhét vào change hiện tại.
 7. **Plan là markdown.** Sửa tay được; nhưng nếu sửa làm lệch các artifact khác, dùng `openspec-update-change`.
+8. **Hai repo, một nguồn plan.** Plan (`openspec/`) nằm ở repo docs; code nằm ở repo code. `tasks.md` là cầu nối duy nhất: agent tick ở repo docs, code ở repo code, không tạo `openspec/` thứ hai.
 
 ---
 
@@ -65,40 +66,53 @@ Cập nhật skill định kỳ:
 openspec update
 ```
 
-### 2.2 Mỗi repo mới
+### 2.2 Plan một repo, code hai repo
 
-Chỉ cần tạo cấu trúc OpenSpec cho repo, không cài lại skill:
+Plan nằm ở repo docs; code tách BE và FE. Mặc định dự án `kasio`:
 
-```bash
-cd /path/to/new-repo
-openspec init --tools none --language vi
+```text
+kasio/
+├── brd/                          # repo docs — openspec root
+│   ├── docs/business-requirements/BRD.md
+│   ├── docs/process/Flow.md
+│   └── openspec/                 # config.yaml, specs/, changes/
+├── api/                          # repo BE — không có openspec/
+│   └── src/                      # ASP.NET Core
+└── ui/                           # repo FE — không có openspec/ (chưa tạo)
+    └── src/                      # Next.js
 ```
 
-CI tối thiểu nên chạy:
+| Repo | Chứa | Lệnh chạy ở đây |
+|---|---|---|
+| `brd` | BRD, Flow, `openspec/` | `openspec ...`, `openspec validate --all` |
+| `api` | Backend ASP.NET Core | `dotnet build/test`, `git` |
+| `ui` | Frontend Next.js (chưa tạo) | `npm`/`pnpm` build/test, `git` |
+
+Quy tắc:
+
+- Mọi lệnh `openspec ...` chạy với cwd = `brd` (hoặc `--store <id>`).
+- Mọi lệnh git/build/test chạy với cwd = repo code tương ứng, hoặc `git -C <code-repo> ...`.
+- Không `openspec init` trong `api` hay `ui`. Nếu repo code đã có `openspec/`, luôn truyền `--planning-root <brd>` để không phân giải sai root.
+- Một change có thể chạm cả BE và FE — vẫn là một change. Review chạy **một lượt cho mỗi repo**, giới hạn task của repo đó, và luôn truyền planning root:
+  BE (cwd `api`): `/skill:openspec-review-change <change> review 1.1-1.4 --planning-root ~/workspace/kasio/brd`
+  FE (cwd `ui`): `/skill:openspec-review-change <change> review 1.5-1.8 --planning-root ~/workspace/kasio/brd`.
+- Task của repo không được review trong lượt đó không bị tick; chúng chỉ được đếm là out-of-scope.
+- `ui` chưa tạo: mọi change hiện tại chỉ chạm `api`; phần FE ghi vào Out of Scope cho đến khi repo tồn tại.
+- Nhiều dự án trên một máy: truyền `--planning-root` mỗi lần, không đặt `defaultStore` global.
+
+### 2.3 Repo docs mới
+
+Tạo cấu trúc OpenSpec cho repo docs, không cài lại skill:
 
 ```bash
+cd /path/to/docs-repo
+openspec init --tools none --language vi
 openspec validate --all
 ```
 
-Kết quả tối thiểu:
+Giữ `openspec/` + `docs/`; không cần `src/` ở repo docs. CI của repo docs chạy `openspec validate --all`.
 
-```text
-repo/
-├── docs/
-│   ├── business-requirements/
-│   │   └── BRD.md
-│   └── process/
-│       └── Flow.md
-├── openspec/
-│   ├── config.yaml
-│   ├── specs/                  # hệ thống đã build
-│   └── changes/
-│       ├── <change-name>/      # change đang làm
-│       └── archive/            # lịch sử
-└── src/
-```
-
-### 2.3 Cấu hình project
+### 2.4 Cấu hình project
 
 `openspec/config.yaml` nên ghi rõ context để mọi agent đọc cùng một luật:
 
@@ -127,13 +141,12 @@ context: |
   - Read DB: MongoDB (projection only, rebuildable).
   - Sync write→read: CAP (.NET) transactional outbox + event bus.
   - Background jobs: Hangfire, idempotent.
-  - Web: Next.js + Tailwind CSS + GSAP.
-  - Mobile: React Native.
+  - Web: Next.js + Tailwind CSS + GSAP; một web app responsive cho mọi actor.
 ```
 
 Không đưa secret, token hay thông tin khách hàng vào `config.yaml`.
 
-### 2.4 Tech stack đã chốt
+### 2.5 Tech stack đã chốt
 
 Tech stack không còn là câu hỏi mở. Mọi change bám theo bảng dưới; đổi stack phải tạo `OD-*` mới và ADR, không tự ý đổi trong lúc apply.
 
@@ -145,8 +158,7 @@ Tech stack không còn là câu hỏi mở. Mọi change bám theo bảng dướ
 | Read DB | MongoDB | Projection rebuild được; mọi document tenant-scoped có `tenantId` |
 | Sync write→read | CAP (.NET) | Transactional outbox + event bus; publish sau commit; at-least-once; projection idempotent; transport chốt ở Sprint 0 |
 | Background job | Hangfire | Worker riêng; job idempotent; không giữ transaction dài |
-| Web | Next.js + Tailwind CSS + GSAP | Platform Admin console; GSAP cho animation/transition |
-| Mobile | React Native | Một app cho Owner/Staff/Renter/Seeker |
+| Web | Next.js + Tailwind CSS + GSAP | Một web app responsive cho Owner/Staff/Renter/Seeker/Platform Admin; GSAP cho animation/transition |
 
 Quy tắc:
 
@@ -155,6 +167,7 @@ Quy tắc:
 - Mọi domain GET/query handler chỉ đọc MongoDB; auth/session/permission/idempotency là ngoại lệ hạ tầng.
 - Test cross-tenant phải phủ cả endpoint đọc từ MongoDB.
 - Không thêm công nghệ mới (message broker/cache/search engine) ngoài transport đã chốt cho CAP nếu BRD chưa có quyết định; đề xuất bằng change/ADR riêng.
+- UI chỉ làm trên web responsive (viewport 360 px → desktop); không thêm app native/React Native trừ khi BRD đổi D-14.
 
 ---
 
@@ -167,7 +180,7 @@ Quy tắc:
 | 0 | `openspec-explore` | Suy nghĩ, so sánh phương án, làm rõ yêu cầu | Không | Không |
 | 1 | `openspec-propose` | Tạo change + `proposal.md`, `specs/`, `design.md`, `tasks.md` | Không | Có |
 | 2 | `openspec-update-change` | Sửa plan cho khớp nhau | Không | Khi cần |
-| 3 | `openspec-apply-change` | Implement từng task, tick `tasks.md` | Có | Không (thay được bằng tự code + `review-change`) |
+| 3 | `openspec-apply-change` | Implement từng task, tick `tasks.md` | Có | Chỉ khi code cùng repo với plan; setup 2 repo thì tự code + `review-change` |
 | 4 | `openspec-review-change` | Đối chiếu code tự viết với artifact, chạy check, tick task có bằng chứng; làm nốt task nhỏ hoặc viết test scenario | Có (mode `finish`/`tests`) | Khi tự code |
 | 5 | `openspec-sync-specs` | Merge delta spec vào main spec, không archive | Không | Khi cần |
 | 6 | `openspec-archive-change` | Đóng change, archive, merge spec | Không | Có |
@@ -206,6 +219,8 @@ flowchart LR
   AR --> M[openspec/specs = hệ thống đã build]
 ```
 
+Khi plan và code ở các repo khác nhau (mục 2.2): `explore`/`propose`/`update-change`/`sync-specs`/`archive` chạy ở `brd`; code và `review-change` chạy ở `api`/`ui` với `--planning-root <brd>`, mỗi repo một lượt. `apply-change` chỉ dùng khi code nằm cùng repo với plan.
+
 ### 3.3 Cách gọi trong omp
 
 Trong omp, gõ `/skill:` rồi chọn skill, hoặc dùng trực tiếp:
@@ -222,6 +237,13 @@ Trong omp, gõ `/skill:` rồi chọn skill, hoặc dùng trực tiếp:
 /skill:openspec-archive-change add-tenant-auth-foundation
 ```
 
+Từ repo code, luôn truyền planning root:
+
+```text
+/skill:openspec-review-change add-tenant-auth-foundation --planning-root ~/workspace/kasio/brd
+/skill:openspec-review-change add-tenant-auth-foundation finish 1.2-1.5 --planning-root ~/workspace/kasio/brd
+```
+
 Agent khác có thể dùng `/openspec-propose`, hoặc mô tả bằng lời:
 
 ```text
@@ -230,11 +252,20 @@ Dùng openspec-propose để tạo change add-tenant-auth-foundation.
 
 ### 3.4 Tự code rồi review (không dùng apply)
 
-`apply` là tùy chọn, không bắt buộc. Tự code là cách hợp lệ, miễn là trước khi
-archive có bước đối chiếu code với artifact. Skill `openspec-review-change` là
-skill **global** (`~/.agents/skills/openspec-review-change/SKILL.md`), dùng cho
-mọi repo trên máy và không commit vào repo. Máy mới chỉ cần copy thư mục skill
-vào `~/.agents/skills/`.
+`apply` là tùy chọn, không bắt buộc — và không dùng được khi plan và code ở các repo khác nhau. Tự code là cách hợp lệ, miễn là trước khi archive có bước đối chiếu code với artifact.
+
+`openspec-review-change` là skill **global** (`~/.agents/skills/openspec-review-change/SKILL.md`), không commit vào repo; máy mới chỉ cần copy thư mục skill vào `~/.agents/skills/`. Skill chạy từ repo code và nhận:
+
+| Tham số | Ý nghĩa |
+|---|---|
+| `<change>` | Tên change trong repo docs; bỏ trống nếu chỉ có một change active |
+| `mode` | `review` (mặc định), `tests`, `finish` |
+| `tasks` | `3`, `1.2`, `3-5`, `3,4`; bỏ trống = toàn bộ `tasks.md` |
+| `code-repo` | Đường dẫn repo code cho lượt này (`../api`, `../ui`); mặc định cwd. Token trỏ tới thư mục tồn tại được đọc là tham số này |
+| `--planning-root <path>` | Repo docs chứa `openspec/`; bắt buộc khi cwd là repo code |
+| `--base <ref>` | Base của diff; mặc định upstream branch → `main`/`master`/`develop` |
+
+Skill lấy baseline = **branch hiện tại** của repo code: commit từ `merge-base <base> HEAD` đến `HEAD`, cộng phần chưa commit và untracked. Vì vậy code trên branch riêng (`change/<name>`), không code thẳng trên `main` (diff sẽ rỗng). Skill chỉ đọc branch đang đứng, không switch/stash/reset.
 
 | Mode | Ghi gì | Dùng khi |
 |---|---|---|
@@ -244,12 +275,15 @@ vào `~/.agents/skills/`.
 
 Quy trình:
 
-1. Tự code. Không cần tick tay từng task.
-2. Chạy review:
-   `/skill:openspec-review-change add-tenant-auth-foundation`
-   Chỉ định task cụ thể: thêm số task sau mode, ví dụ
-   `/skill:openspec-review-change add-tenant-auth-foundation review 3,4`
-   hoặc `... finish 1.2-1.5`. Bỏ trống = toàn bộ `tasks.md`.
+1. Tự code trong repo tương ứng (`api` cho BE, `ui` cho FE). Không cần tick tay từng task.
+2. Chạy review từ repo code — change chạm cả hai thì chạy hai lượt, mỗi lượt một repo:
+   ```text
+   # cwd: ~/workspace/kasio/api
+   /skill:openspec-review-change add-tenant-auth-foundation review 1.1-1.4 --planning-root ~/workspace/kasio/brd
+   # cwd: ~/workspace/kasio/ui
+   /skill:openspec-review-change add-tenant-auth-foundation review 1.5-1.8 --planning-root ~/workspace/kasio/brd
+   ```
+   `mode` + `tasks` giới hạn phần được tick; bỏ trống = toàn bộ `tasks.md`. Task được tick trong `tasks.md` ở repo docs; task của repo còn lại không bị đụng.
 3. Đọc báo cáo: task `done` được tick; `partial`/`missing`/`suspect` giữ
    nguyên kèm lý do và file liên quan.
 4. Thiếu test scenario → mode `tests`. Còn task nhỏ → mode `finish`
@@ -279,6 +313,18 @@ Plan: validate pass; tasks 6/12; ticked 3 this run
 - task 9 — missing — chưa có audit event khi Owner mời Staff
 ```
 
+### 3.5 Change scaffolding (base repo, tooling)
+
+Change không thay đổi hành vi spec — dựng base repo, CI, docker-compose, refactor thuần — không tạo delta spec. Sau `openspec new change`, thêm vào `.openspec.yaml`:
+
+```yaml
+skip_specs: true
+```
+
+CLI báo `CHANGE_SKIP_SPECS_ACCEPTED` (zero deltas accepted), `specs` chuyển `skipped`, `apply` vẫn `ready` với proposal/design/tasks. Không tạo thư mục `specs/`; nếu có file trong `specs/`, CLI báo `CHANGE_SKIP_SPECS_CONFLICT` và marker không được honor.
+
+Dùng cho `bootstrap-base-repo`, `add-ci-pipeline`, `refactor-*`. Không dùng cho change có hành vi người dùng thấy được.
+
 ---
 
 ## 4. Gate và trạng thái
@@ -296,7 +342,7 @@ Plan: validate pass; tasks 6/12; ticked 3 this run
 
 - **G1 — Plan gate:** proposal nêu rõ why/scope/out-of-scope; spec testable; tasks ≤ 1 ngày/task.
 - **G2 — Code gate:** test pass; cross-tenant test cho endpoint tenant-scoped; audit cho thao tác nhạy cảm; không có scope mới.
-- **G3 — Archive gate:** tất cả task `[x]`; PR đã merge; `openspec validate --all` pass; main spec đã sync.
+- **G3 — Archive gate:** tất cả task `[x]`; PR đã merge; `openspec validate --all` pass; `openspec validate --archived` pass; main spec đã sync.
 
 ---
 
@@ -387,8 +433,16 @@ Hoặc sửa trực tiếp file markdown. Nếu thay đổi **mục tiêu** ch�
 
 Chỉ bắt đầu khi plan đã `Plan Approved`.
 
+Khi code cùng repo với plan:
+
 ```text
 /skill:openspec-apply-change add-tenant-auth-foundation
+```
+
+Khi code ở repo khác (setup mặc định, mục 2.2): không dùng `apply-change`. Tự code trong repo code trên branch `change/<name>`, rồi chạy:
+
+```text
+/skill:openspec-review-change add-tenant-auth-foundation --planning-root ~/workspace/kasio/brd
 ```
 
 Quy tắc:
@@ -400,10 +454,12 @@ Quy tắc:
 - Không thêm feature ngoài `specs/`.
 
 Nếu tự code thay vì `apply`: bỏ qua bước này, code xong thì chạy
-`/skill:openspec-review-change <change>` (mục 3.4) để đối chiếu và tick task
-có bằng chứng trước khi mở PR.
+`/skill:openspec-review-change <change> --planning-root <docs-repo>` (mục 3.4)
+để đối chiếu, tick task ở repo docs và có bằng chứng trước khi mở PR.
 
 ### Bước 6 — Code review
+
+Change chạm cả BE và FE: mở PR ở từng repo (`api`, `ui`), cả hai link cùng change.
 
 PR phải có:
 
@@ -480,7 +536,7 @@ RBAC có phạm vi Property và audit cho thao tác nhạy cảm. Đây là nề
 
 - Database: User, Tenant, Membership, Role, Permission, AuditEvent.
 - API: auth, staff, role.
-- Mobile: login, chọn vai trò, màn hình Staff.
+- Web: login, chọn vai trò, màn hình Staff responsive.
 ```
 
 ### 6.3 `specs/tenant-auth/spec.md` — ví dụ delta spec
@@ -676,6 +732,8 @@ Ví dụ:
 change/add-tenant-auth-foundation
 ```
 
+Dùng cùng tên branch ở mọi repo code của change (`api`, `ui`).
+
 ### 8.3 Commit
 
 ```text
@@ -725,6 +783,7 @@ openspec/changes/add-tenant-auth-foundation
 - [ ] Change chạm dữ liệu có `design.md` nêu command/query, CAP outbox/projection, Hangfire job liên quan.
 - [ ] `OD-*` liên quan đã chốt hoặc có default được ghi rõ.
 - [ ] Không có dependency chưa xong (hoặc đã ghi rõ thứ tự).
+- [ ] Change chạm FE khi `ui` chưa tồn tại: phần FE được ghi rõ ở Out of Scope.
 - [ ] `openspec validate <change>` pass.
 
 ### 9.2 Definition of Done (change)
@@ -739,7 +798,7 @@ openspec/changes/add-tenant-auth-foundation
 - [ ] Domain GET/query handler chỉ đọc MongoDB; không query PostgreSQL.
 - [ ] Audit event ghi cho mọi thao tác của actor đã xác thực và thao tác nhạy cảm.
 - [ ] Hangfire job (nếu có) idempotent, retry an toàn, không giữ transaction dài.
-- [ ] UI có loading/empty/error/retry.
+- [ ] UI có loading/empty/error/retry; không cuộn ngang ở viewport 360 px, hiển thị đúng ở desktop.
 - [ ] `openspec validate --all` pass.
 - [ ] PR được review và merge.
 - [ ] Demo trên staging.
@@ -796,6 +855,7 @@ Với team 1–2 người:
 - [ ] Có scenario audit cho thao tác nhạy cảm.
 - [ ] Có scenario audit cho mọi thao tác của actor đã xác thực.
 - [ ] `tasks.md` cover hết spec, không thừa.
+- [ ] Change chạm UI có scenario responsive (360 px + desktop).
 - [ ] Mỗi task ≤ 1 ngày; dependency rõ.
 - [ ] Không có payment/chat/offline/auto-compare ngoài scope.
 
@@ -817,13 +877,14 @@ Với team 1–2 người:
 - [ ] Không log PII/CCCD/token.
 - [ ] Migration an toàn; có rollback.
 - [ ] Không có code chết/TODO ngoài scope.
-- [ ] UI có loading/empty/error/retry.
+- [ ] UI có loading/empty/error/retry; bố cục responsive đúng ở 360 px và desktop.
 
 ### 12.3 Archive
 
 - [ ] Tất cả task `[x]`.
 - [ ] PR đã merge.
 - [ ] `openspec validate --all` pass.
+- [ ] `openspec validate --archived` pass.
 - [ ] Main spec đã sync.
 - [ ] Change nằm trong `archive/YYYY-MM-DD-*`.
 - [ ] Không còn change active trùng capability.
@@ -844,6 +905,10 @@ Với team 1–2 người:
 | Thêm scope giữa sprint | Trễ, loãng spec | Ý mới → change mới |
 | Chạy archive khi task chưa xong | Spec không khớp code | Gate G3 |
 | Dùng project-local skills | Team không thống nhất | Dùng global skills + `openspec init --tools none` |
+| Code thẳng trên `main` của repo code | Diff rỗng, review không thấy gì | Tạo branch `change/<name>` trước khi code |
+| `openspec init` trong repo code | Root phân giải sai, plan tách làm hai | Chỉ init ở repo docs; truyền `--planning-root` |
+| Quên `--planning-root` khi đứng ở repo code | CLI báo `root: null` hoặc dùng nhầm root | Truyền repo docs mỗi lần; không đặt `defaultStore` |
+| Review FE từ repo `api` (hoặc ngược lại) | Task của repo kia báo `missing` sai | Chạy đúng repo, giới hạn task bằng selector (`1.1-1.4` cho `api`, `1.5-1.8` cho `ui`) |
 | Copy cả BRD vào spec | Spec phình, lệch nguồn | Spec chỉ chứa delta requirement |
 
 ---
@@ -854,8 +919,8 @@ Trong ngày đầu:
 
 1. Đọc `docs/business-requirements/BRD.md` mục 1, 3, 6, 12, 13.
 2. Đọc `docs/process/Flow.md` này.
-3. Cài OpenSpec CLI + global skills cho agent.
-4. Chạy:
+3. Cài OpenSpec CLI + global skills cho agent; xác định repo docs (plan) và repo code.
+4. Chạy ở repo docs:
    ```bash
    openspec --version
    openspec list
@@ -864,9 +929,9 @@ Trong ngày đầu:
 5. Đọc một change đã archive để xem mẫu:
    ```bash
    ls openspec/changes/archive/
-   openspec show <archived-change>
+   openspec change show <archived-change>
    ```
-6. Làm change đầu tiên với vai trò shadow: propose một change nhỏ, review với Tech Lead, apply, archive.
+6. Làm change đầu tiên với vai trò shadow: propose `bootstrap-base-repo` với `skip_specs: true`, tự code ở repo code trên branch `change/bootstrap-base-repo`, review bằng `--planning-root`, rồi archive.
 
 Tiêu chí onboard xong:
 
